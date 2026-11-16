@@ -494,6 +494,10 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::webhooks::routes::rotate_webhook_secret,
         crate::webhooks::routes::list_webhook_deliveries,
         crate::webhooks::routes::retry_webhook_delivery,
+        crate::office::routes::get_office_settings,
+        crate::office::routes::save_office_settings,
+        crate::office::routes::remove_office_settings,
+        crate::office::routes::test_office_connection,
     )
 )]
 struct ApiDocument;
@@ -633,6 +637,7 @@ fn problem_schema(route: &str) -> &'static str {
         || route.contains("/mail/")
         || route.contains("/billing")
         || route.contains("/webhooks")
+        || route.contains("/settings/office")
     {
         "TaskProblem"
     } else if route.starts_with("/api/v1/auth") || route.starts_with("/api/v1/setup") {
@@ -1130,8 +1135,23 @@ fn problem_responses(operation_id: &str) -> BTreeMap<&'static str, String> {
             add_code(&mut responses, "422", "invalid_guest_channels");
             add_code(&mut responses, "502", "email_failed");
         }
-        "get_instance_settings" | "remove_smtp" | "get_job_limits" => {
+        "get_instance_settings" | "remove_smtp" | "get_job_limits" | "get_office_settings" => {
             add_code(&mut responses, "403", "installation_admin_required");
+        }
+        "save_office_settings" => {
+            add_code(&mut responses, "403", "installation_admin_required");
+            add_code(&mut responses, "409", "set_by_environment");
+            add_code(&mut responses, "422", "invalid_office_settings");
+            add_code(&mut responses, "503", "app_key_missing");
+        }
+        "remove_office_settings" => {
+            add_code(&mut responses, "403", "installation_admin_required");
+            add_code(&mut responses, "409", "set_by_environment");
+        }
+        "test_office_connection" => {
+            add_code(&mut responses, "403", "installation_admin_required");
+            add_code(&mut responses, "409", "office_not_configured");
+            add_code(&mut responses, "502", "office_unreachable");
         }
         "set_registration" => {
             add_code(&mut responses, "403", "installation_admin_required");
@@ -1398,6 +1418,7 @@ fn invalid_request_operation(operation_id: &str) -> bool {
             | "registration_complete"
             | "set_registration"
             | "save_smtp"
+            | "save_office_settings"
             | "save_s3"
             | "save_sign_in_provider"
             | "start_provider_sign_in"

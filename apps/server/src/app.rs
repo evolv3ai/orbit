@@ -243,7 +243,13 @@ impl App {
                 .await
                 .map_err(|error| AppError::Config(format!("object storage: {error}")))?;
             environment.install(&database);
+            crate::office::settings::EnvironmentOffice::from_config(&config.instance, key)
+                .map_err(AppError::Config)?
+                .install(&database);
         }
+        crate::office::settings::reload(&database)
+            .await
+            .map_err(|error| AppError::Database(error.to_string()))?;
         let object_storage = ObjectStorage::default();
         let storage_settings = crate::object_storage::load_saved(&database)
             .await
@@ -672,6 +678,11 @@ impl App {
                     cookie_mode,
                     app_key,
                     config.environment == orbit_platform::EnvironmentMode::Development,
+                ),
+                office: crate::office::routes::OfficeState::new(
+                    Arc::clone(&identity),
+                    cookie_mode,
+                    app_key,
                 ),
             },
             health,

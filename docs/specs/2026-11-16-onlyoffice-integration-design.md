@@ -78,6 +78,25 @@ Instance settings, following the S3 pattern in `crates/platform/src/config/insta
 Admin page: "Office editing", with a **Test connection** button that calls the Document Server's
 `/healthcheck` through the internal URL.
 
+As built (OO-7, `apps/server/src/office/settings.rs` and `routes.rs`):
+
+- The saved values are in their own one-row table, `office_settings`, not in `instance_settings`,
+  so upstream changes to that table do not conflict.
+- `ORBIT_ONLYOFFICE_URL` and `ORBIT_ONLYOFFICE_JWT_SECRET` are set together.
+  `ORBIT_ONLYOFFICE_ENABLED` is `true` when the group is set without it. While the group is set,
+  Admin is read-only (409 `set_by_environment`) and the saved row stays for later.
+- Routes, for instance admins: `GET`, `PUT` and `DELETE /api/v1/admin/settings/office`, and
+  `POST /api/v1/admin/settings/office/test`. The secret is never returned (`jwt_secret_set`).
+- `OfficeSettingsRepository::get` returns the settings in use; `OfficeSettings::jwt_secret(app_key)`
+  decrypts the secret and `server_url()` is the internal URL or the public one. OO-8 to OO-10 read
+  the settings through these.
+- `office::settings::reload` sets or clears the `CspOfficeOrigin` handle (section 5). It runs at
+  startup, after each save, and on the other servers of a cluster (`Message::OfficeChanged`).
+- The public URL must have a host name or an IPv4 address as its host: the policy cannot name an
+  IPv6 literal.
+- The web app has no "is office editing on" flag for members yet. OO-12 needs one.
+- No mobile Admin screen: mobile is out of Phase 1 (section 6).
+
 ### 4.2 Office token (download authentication)
 
 The Document Server has no Orbit session. Copy `socket_ticket.rs`: a stateless HMAC token with an

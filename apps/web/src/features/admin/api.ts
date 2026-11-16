@@ -1,8 +1,8 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/api/client'
 import { queryKeys } from '@/api/queryKeys'
-import { changeUserEmail, getAdminUserSummary, createBackup, createRecoveryLink, deleteBackup, getInstanceSettings, getJobLimits, saveJobLimits, listAdminUsers, listBackupItems, listBackups, listBackupWorkspaces, restoreBackupItem, listGlobalAudit, removeS3, removeSignInProvider, removeSmtp, resetTwoFactor, saveLimits, saveS3, saveSignInProvider, saveStorageOptions, setInstanceAdmin, startImageCompression, saveSmtp, sendTestEmail, setAccountSuspension, setRegistration } from '@orbit/api/generated/sdk.gen'
-import type { BackupItemKind, InstanceSettingsView, JobLimitsBody, LimitsView, Provider, S3Body, SignInProviderBody, SmtpBody, StorageOptionsBody } from '@orbit/api/generated/types.gen'
+import { changeUserEmail, getAdminUserSummary, createBackup, createRecoveryLink, deleteBackup, getInstanceSettings, getJobLimits, getOfficeSettings, removeOfficeSettings, saveOfficeSettings, testOfficeConnection, saveJobLimits, listAdminUsers, listBackupItems, listBackups, listBackupWorkspaces, restoreBackupItem, listGlobalAudit, removeS3, removeSignInProvider, removeSmtp, resetTwoFactor, saveLimits, saveS3, saveSignInProvider, saveStorageOptions, setInstanceAdmin, startImageCompression, saveSmtp, sendTestEmail, setAccountSuspension, setRegistration } from '@orbit/api/generated/sdk.gen'
+import type { BackupItemKind, InstanceSettingsView, JobLimitsBody, LimitsView, OfficeSettingsBody, OfficeSettingsView, Provider, S3Body, SignInProviderBody, SmtpBody, StorageOptionsBody } from '@orbit/api/generated/types.gen'
 
 /** How many results the user search shows; more matches ask for a longer search. */
 export const ADMIN_USER_RESULTS = 20
@@ -232,6 +232,40 @@ export function useSendTestEmail() {
   return useMutation({
     mutationFn: async () => {
       await sendTestEmail({ client: apiClient, throwOnError: true })
+    },
+  })
+}
+
+/** The office Document Server (Admin → Office editing). */
+export function useOfficeSettings() {
+  return useQuery({
+    queryKey: queryKeys.adminOfficeSettings,
+    queryFn: async () => (await getOfficeSettings({ client: apiClient, throwOnError: true })).data,
+  })
+}
+
+/** Each write answers with the settings in use. */
+function useOfficeWrite<T>(write: (input: T) => Promise<OfficeSettingsView>) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: write,
+    onSuccess: (settings) => queryClient.setQueryData(queryKeys.adminOfficeSettings, settings),
+  })
+}
+
+export function useSaveOfficeSettings() {
+  return useOfficeWrite(async (body: OfficeSettingsBody) => (await saveOfficeSettings({ client: apiClient, throwOnError: true, body })).data)
+}
+
+export function useRemoveOfficeSettings() {
+  return useOfficeWrite(async () => (await removeOfficeSettings({ client: apiClient, throwOnError: true })).data)
+}
+
+/** Asks the Document Server for its health check; fails with the reason when it does not answer. */
+export function useTestOfficeConnection() {
+  return useMutation({
+    mutationFn: async () => {
+      await testOfficeConnection({ client: apiClient, throwOnError: true })
     },
   })
 }

@@ -13,7 +13,8 @@ use thiserror::Error;
 mod instance;
 
 pub use instance::{
-    BackupSchedule, InstanceConfig, OAuthClientConfig, OidcConfig, SmtpConfig, SmtpSecurity,
+    BackupSchedule, InstanceConfig, OAuthClientConfig, OidcConfig, OnlyofficeConfig, SmtpConfig,
+    SmtpSecurity,
 };
 
 const MAX_SECRET_FILE_BYTES: u64 = 64 * 1024;

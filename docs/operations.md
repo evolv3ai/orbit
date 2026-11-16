@@ -79,6 +79,11 @@ The variables of one group are set together. For example, `ORBIT_SMTP_HOST` need
 | `ORBIT_OIDC_ISSUER` | none | The issuer URL of an OpenID Connect provider, for example `https://auth.example.com/application/o/orbit/`. Requires `ORBIT_OIDC_CLIENT_ID` and `ORBIT_OIDC_CLIENT_SECRET`. See [Sign in with OpenID Connect](#sign-in-with-openid-connect). |
 | `ORBIT_OIDC_CLIENT_ID`, `ORBIT_OIDC_CLIENT_SECRET`, `ORBIT_OIDC_CLIENT_SECRET_FILE` | none | The client that the provider issued to Orbit. |
 | `ORBIT_OIDC_DISPLAY_NAME` | `SSO` | The name on the sign-in button ("Continue with SSO"), at most 50 characters. |
+| `ORBIT_ONLYOFFICE_URL` | saved value | The ONLYOFFICE Document Server as browsers reach it, for example `https://office.example.com`. Requires `ORBIT_ONLYOFFICE_JWT_SECRET`. See [Office editing (ONLYOFFICE)](#office-editing-onlyoffice). |
+| `ORBIT_ONLYOFFICE_JWT_SECRET`, `ORBIT_ONLYOFFICE_JWT_SECRET_FILE` | saved value | The `JWT_SECRET` of the Document Server, at most 512 characters. |
+| `ORBIT_ONLYOFFICE_ENABLED` | `true` | `true` or `false`. `false` keeps the other values and turns office editing off. |
+| `ORBIT_ONLYOFFICE_INTERNAL_URL` | `ORBIT_ONLYOFFICE_URL` | The Document Server as Orbit reaches it, when that is another address (for example on a private network). |
+| `ORBIT_ONLYOFFICE_ORBIT_URL` | `ORBIT_PUBLIC_ORIGIN` | Orbit as the Document Server reaches it, when that is another address than the public one. |
 
 Orbit does not test the `ORBIT_S3_*` bucket at startup, as Admin does when it saves one. An unreachable bucket shows up as a move error on **Admin → Storage** and as failed backups. Orbit refuses to start when a workspace's own bucket overlaps the `ORBIT_S3_*` bucket.
 
@@ -236,6 +241,21 @@ Orbit uses these rules:
 - If no account has that email, Orbit creates an account only when **Open registration** is on. Open registration does not need a mail server when a sign-in provider is configured (Orbit Cloud still needs one). A new account has no password. The person can add one in the profile settings within 10 minutes of a sign-in.
 - An account with two-factor authentication must still enter its code after the provider sign-in.
 - People connect and disconnect providers in their security settings. Orbit does not let a person remove the last sign-in method (password, passkey or provider).
+
+## Office editing (ONLYOFFICE)
+
+This is a feature of the `evolv3ai/orbit` fork. Orbit can open Word, Excel, PowerPoint and PDF files in an [ONLYOFFICE Docs](https://www.onlyoffice.com/docs) Document Server that you run. The files stay in Orbit. The settings are in this build; opening a file in the editor is not built yet.
+
+An instance admin saves the Document Server in **Admin → Office editing**, or the `ORBIT_ONLYOFFICE_*` variables set it (then Admin shows it read-only):
+
+- **Document Server URL**: the address that browsers load the editor from. It must have a host name or an IPv4 address as its host.
+- **JWT secret**: the `JWT_SECRET` of the Document Server (run it with `JWT_ENABLED=true`). Orbit stores it encrypted, so the server needs `ORBIT_APP_KEY`.
+- **Internal Document Server URL** and **Orbit URL for the Document Server**: optional, for when Orbit and the Document Server reach each other on other addresses than browsers use.
+- **Open office files in the editor**: the switch. Off keeps the settings.
+
+**Test connection** asks the Document Server for `GET {internal URL or URL}/healthcheck` and expects the answer `true` within 10 seconds. It also works while the switch is off.
+
+While office editing is on, Orbit's content security policy lets pages load scripts and frames from the origin of the Document Server URL. A change applies to the next response, without a restart, also on the other servers of a cluster. While it is off, the policy has no extra source.
 
 ## Sign in with OpenID Connect
 

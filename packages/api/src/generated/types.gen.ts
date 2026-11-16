@@ -4956,6 +4956,56 @@ export type ObsidianSkippedFiles = {
     unreferenced: number;
 };
 
+export type OfficeSettingsBody = {
+    enabled: boolean;
+    /**
+     * Absent or empty: Orbit uses `url`.
+     */
+    internal_url?: string | null;
+    /**
+     * The Document Server's `JWT_SECRET`. Absent or empty: keep the saved secret. Required the first time.
+     */
+    jwt_secret?: string | null;
+    /**
+     * Absent or empty: the Document Server uses Orbit's public address.
+     */
+    orbit_url?: string | null;
+    /**
+     * The Document Server as browsers reach it, for example `https://office.example.com`.
+     */
+    url: string;
+};
+
+/**
+ * The office Document Server in use. The secret is never returned.
+ */
+export type OfficeSettingsView = {
+    /**
+     * Office files open in the editor. `false` also while no Document Server is saved.
+     */
+    enabled: boolean;
+    /**
+     * The Document Server as Orbit reaches it; `null`: `url`.
+     */
+    internal_url?: string | null;
+    /**
+     * A secret is saved.
+     */
+    jwt_secret_set: boolean;
+    /**
+     * Orbit as the Document Server reaches it; `null`: Orbit's public address.
+     */
+    orbit_url?: string | null;
+    /**
+     * `ORBIT_ONLYOFFICE_*` variables set these values. Changing them here gives 409 `set_by_environment`.
+     */
+    set_by_environment: boolean;
+    /**
+     * The Document Server as browsers reach it; `null` until one is saved.
+     */
+    url?: string | null;
+};
+
 /**
  * An Orbit import. Never contains the token.
  */
@@ -6802,7 +6852,8 @@ export type PublicMe = {
     user: null | PublicUser;
     workspace: PublicNamed;
     /**
-     * Every workspace the token may use, with its access there. Always one item today.
+     * Every workspace the token may use, with its access there. An API token has one; an OAuth
+     * connection can have several.
      */
     workspaces: Array<PublicWorkspaceGrant>;
 };
@@ -14515,6 +14566,226 @@ export type SaveLimitsResponses = {
 };
 
 export type SaveLimitsResponse = SaveLimitsResponses[keyof SaveLimitsResponses];
+
+export type RemoveOfficeSettingsData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/settings/office';
+};
+
+export type RemoveOfficeSettingsErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * origin_forbidden, installation_admin_required
+     */
+    403: TaskProblem;
+    /**
+     * contract_mismatch, set_by_environment
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type RemoveOfficeSettingsError = RemoveOfficeSettingsErrors[keyof RemoveOfficeSettingsErrors];
+
+export type RemoveOfficeSettingsResponses = {
+    200: OfficeSettingsView;
+};
+
+export type RemoveOfficeSettingsResponse = RemoveOfficeSettingsResponses[keyof RemoveOfficeSettingsResponses];
+
+export type GetOfficeSettingsData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/settings/office';
+};
+
+export type GetOfficeSettingsErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * installation_admin_required
+     */
+    403: TaskProblem;
+    /**
+     * contract_mismatch
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type GetOfficeSettingsError = GetOfficeSettingsErrors[keyof GetOfficeSettingsErrors];
+
+export type GetOfficeSettingsResponses = {
+    200: OfficeSettingsView;
+};
+
+export type GetOfficeSettingsResponse = GetOfficeSettingsResponses[keyof GetOfficeSettingsResponses];
+
+export type SaveOfficeSettingsData = {
+    body: OfficeSettingsBody;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/settings/office';
+};
+
+export type SaveOfficeSettingsErrors = {
+    /**
+     * invalid_proxy_headers, invalid_request
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * origin_forbidden, installation_admin_required
+     */
+    403: TaskProblem;
+    /**
+     * contract_mismatch, set_by_environment
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * invalid_office_settings
+     */
+    422: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * app_key_missing
+     */
+    503: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type SaveOfficeSettingsError = SaveOfficeSettingsErrors[keyof SaveOfficeSettingsErrors];
+
+export type SaveOfficeSettingsResponses = {
+    200: OfficeSettingsView;
+};
+
+export type SaveOfficeSettingsResponse = SaveOfficeSettingsResponses[keyof SaveOfficeSettingsResponses];
+
+export type TestOfficeConnectionData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/settings/office/test';
+};
+
+export type TestOfficeConnectionErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * origin_forbidden, installation_admin_required
+     */
+    403: TaskProblem;
+    /**
+     * contract_mismatch, office_not_configured
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * office_unreachable
+     */
+    502: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type TestOfficeConnectionError = TestOfficeConnectionErrors[keyof TestOfficeConnectionErrors];
+
+export type TestOfficeConnectionResponses = {
+    204: void;
+};
+
+export type TestOfficeConnectionResponse = TestOfficeConnectionResponses[keyof TestOfficeConnectionResponses];
 
 export type SetRegistrationData = {
     body: RegistrationBody;

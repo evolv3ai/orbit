@@ -63,6 +63,7 @@ pub struct ApiRoutes {
     pub chat: ChatState,
     pub mail: MailState,
     pub webhooks: crate::webhooks::routes::WebhookState,
+    pub office: crate::office::routes::OfficeState,
 }
 
 pub fn production_router(
@@ -113,6 +114,7 @@ pub fn production_router(
         .merge(chat_router(api.chat))
         .merge(mail_router(api.mail))
         .merge(crate::webhooks::routes::webhook_router(api.webhooks))
+        .merge(crate::office::routes::office_router(api.office))
         .merge(
             Router::new()
                 .route("/health/live", get(liveness))
@@ -134,8 +136,11 @@ pub fn production_router(
         ),
         None => router,
     };
+    // The office settings set and clear this handle (`office::settings::reload`).
+    let csp_office_origin = crate::office::settings::csp_handle(&database);
     router.layer({
         let layer = HttpPlatformLayer::new(origin_policy)
+            .with_csp_office_origin(csp_office_origin)
             .with_contract_id(crate::openapi::CONTRACT_ID)
             .with_limits(limits)
             .with_rate_limits(rate_limits)

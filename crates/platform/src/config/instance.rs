@@ -38,13 +38,19 @@ const OIDC_ISSUER: &str = "ORBIT_OIDC_ISSUER";
 const OIDC_CLIENT_ID: &str = "ORBIT_OIDC_CLIENT_ID";
 const OIDC_CLIENT_SECRET: &str = "ORBIT_OIDC_CLIENT_SECRET";
 const OIDC_DISPLAY_NAME: &str = "ORBIT_OIDC_DISPLAY_NAME";
+const ONLYOFFICE_ENABLED: &str = "ORBIT_ONLYOFFICE_ENABLED";
+const ONLYOFFICE_URL: &str = "ORBIT_ONLYOFFICE_URL";
+const ONLYOFFICE_INTERNAL_URL: &str = "ORBIT_ONLYOFFICE_INTERNAL_URL";
+const ONLYOFFICE_ORBIT_URL: &str = "ORBIT_ONLYOFFICE_ORBIT_URL";
+const ONLYOFFICE_JWT_SECRET: &str = "ORBIT_ONLYOFFICE_JWT_SECRET";
 
-const SECRETS: [&str; 5] = [
+const SECRETS: [&str; 6] = [
     SMTP_PASSWORD,
     S3_SECRET_ACCESS_KEY,
     GOOGLE_CLIENT_SECRET,
     GITHUB_CLIENT_SECRET,
     OIDC_CLIENT_SECRET,
+    ONLYOFFICE_JWT_SECRET,
 ];
 const SMTP_KEYS: [&str; 7] = [
     SMTP_HOST,
@@ -79,6 +85,13 @@ const OTHER_KEYS: [&str; 13] = [
     OIDC_CLIENT_SECRET,
     OIDC_DISPLAY_NAME,
 ];
+const ONLYOFFICE_KEYS: [&str; 5] = [
+    ONLYOFFICE_ENABLED,
+    ONLYOFFICE_URL,
+    ONLYOFFICE_INTERNAL_URL,
+    ONLYOFFICE_ORBIT_URL,
+    ONLYOFFICE_JWT_SECRET,
+];
 
 /// The variable is read by [`InstanceConfig::from_environment`].
 pub(super) fn is_instance_key(key: &str) -> bool {
@@ -86,7 +99,10 @@ pub(super) fn is_instance_key(key: &str) -> bool {
         .strip_suffix("_FILE")
         .filter(|base| SECRETS.contains(base))
         .unwrap_or(key);
-    SMTP_KEYS.contains(&key) || S3_KEYS.contains(&key) || OTHER_KEYS.contains(&key)
+    SMTP_KEYS.contains(&key)
+        || S3_KEYS.contains(&key)
+        || OTHER_KEYS.contains(&key)
+        || ONLYOFFICE_KEYS.contains(&key)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -188,6 +204,21 @@ pub struct OidcConfig {
     pub display_name: String,
 }
 
+/// The office Document Server (ONLYOFFICE Docs) from `ORBIT_ONLYOFFICE_*`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OnlyofficeConfig {
+    /// `ORBIT_ONLYOFFICE_ENABLED`; on when the variable is not set.
+    pub enabled: bool,
+    /// The Document Server as browsers reach it. Without a trailing `/`.
+    pub url: String,
+    /// The Document Server as Orbit reaches it, when that is another address than `url`.
+    pub internal_url: Option<String>,
+    /// Orbit as the Document Server reaches it, when that is another address than Orbit's public origin.
+    pub orbit_url: Option<String>,
+    /// The secret that signs the requests between Orbit and the Document Server (its `JWT_SECRET`).
+    pub jwt_secret: Secret,
+}
+
 /// The instance settings that the environment sets. `None` keeps the value saved in Admin.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InstanceConfig {
@@ -202,6 +233,7 @@ pub struct InstanceConfig {
     pub google: Option<OAuthClientConfig>,
     pub github: Option<OAuthClientConfig>,
     pub oidc: Option<OidcConfig>,
+    pub onlyoffice: Option<OnlyofficeConfig>,
 }
 
 impl InstanceConfig {
@@ -262,6 +294,7 @@ impl InstanceConfig {
             google: oauth_client(&values, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)?,
             github: oauth_client(&values, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET)?,
             oidc: oidc(&values)?,
+            onlyoffice: onlyoffice(&values)?,
         };
         if config.registration_open == Some(true)
             && config.smtp.is_none()
@@ -335,6 +368,17 @@ impl InstanceConfig {
             push(OIDC_CLIENT_ID, &oidc.client.client_id);
             push(OIDC_CLIENT_SECRET, "[REDACTED]");
             push(OIDC_DISPLAY_NAME, &oidc.display_name);
+        }
+        if let Some(office) = &self.onlyoffice {
+            push(ONLYOFFICE_ENABLED, &office.enabled.to_string());
+            push(ONLYOFFICE_URL, &office.url);
+            if let Some(url) = &office.internal_url {
+                push(ONLYOFFICE_INTERNAL_URL, url);
+            }
+            if let Some(url) = &office.orbit_url {
+                push(ONLYOFFICE_ORBIT_URL, url);
+            }
+            push(ONLYOFFICE_JWT_SECRET, "[REDACTED]");
         }
         lines
     }
@@ -591,6 +635,61 @@ fn oidc(values: &Values<'_>) -> Result<Option<OidcConfig>, ConfigError> {
     }))
 }
 
+/// `ORBIT_ONLYOFFICE_URL` and `ORBIT_ONLYOFFICE_JWT_SECRET` are set together. The other three are optional.
+fn onlyoffice(values: &Values<'_>) -> Result<Option<OnlyofficeConfig>, ConfigError> {
+    if !values.any(&ONLYOFFICE_KEYS) {
+        return Ok(None);
+    }
+    let group = "ORBIT_ONLYOFFICE_*";
+    let url = office_url(ONLYOFFICE_URL, required(values, ONLYOFFICE_URL, group)?)?;
+    let optional_url = |key: &'static str| {
+        values
+            .text(key)
+            .map(|value| office_url(key, value))
+            .transpose()
+    };
+    let jwt_secret = values.secret(ONLYOFFICE_JWT_SECRET)?.ok_or_else(|| {
+        invalid(
+            ONLYOFFICE_JWT_SECRET,
+            "is required with the other ORBIT_ONLYOFFICE_* variables",
+        )
+    })?;
+    if jwt_secret.len() > 512 {
+        return Err(invalid(
+            ONLYOFFICE_JWT_SECRET,
+            "must be at most 512 characters",
+        ));
+    }
+    Ok(Some(OnlyofficeConfig {
+        enabled: values.flag(ONLYOFFICE_ENABLED)?.unwrap_or(true),
+        url,
+        internal_url: optional_url(ONLYOFFICE_INTERNAL_URL)?,
+        orbit_url: optional_url(ONLYOFFICE_ORBIT_URL)?,
+        jwt_secret: Secret::new(jwt_secret),
+    }))
+}
+
+/// An `http(s)` URL with a host and without credentials, query or fragment, at most 2048 characters. Returned
+/// without a trailing `/`.
+fn office_url(key: &'static str, value: String) -> Result<String, ConfigError> {
+    let value = value.trim_end_matches('/').to_owned();
+    let valid = url::Url::parse(&value).is_ok_and(|url| {
+        matches!(url.scheme(), "https" | "http")
+            && url.host().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+    });
+    if !valid || value.len() > 2048 {
+        return Err(invalid(
+            key,
+            "must be an http(s) URL without credentials, query or fragment, at most 2048 characters",
+        ));
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,6 +853,92 @@ mod tests {
         );
         assert!(lines.contains("ORBIT_S3_ATTACHMENTS=true"), "{lines}");
         assert!(!lines.contains("very-secret"), "{lines}");
+    }
+
+    #[test]
+    fn onlyoffice_needs_the_url_and_the_secret_and_is_on_by_default() {
+        let config = parse(&[
+            (ONLYOFFICE_URL, " https://office.example.com/ "),
+            (ONLYOFFICE_JWT_SECRET, "shared-secret"),
+        ])
+        .unwrap()
+        .onlyoffice
+        .unwrap();
+        assert_eq!(
+            (
+                config.enabled,
+                config.url.as_str(),
+                config.internal_url.as_deref(),
+                config.orbit_url.as_deref(),
+                config.jwt_secret.expose(),
+            ),
+            (
+                true,
+                "https://office.example.com",
+                None,
+                None,
+                "shared-secret"
+            )
+        );
+        let config = parse(&[
+            (ONLYOFFICE_ENABLED, "false"),
+            (ONLYOFFICE_URL, "https://orbit.example.com/office"),
+            (ONLYOFFICE_INTERNAL_URL, "http://documentserver:80/"),
+            (ONLYOFFICE_ORBIT_URL, "http://orbit:8080"),
+            (ONLYOFFICE_JWT_SECRET, "shared-secret"),
+        ])
+        .unwrap()
+        .onlyoffice
+        .unwrap();
+        assert_eq!(
+            (
+                config.enabled,
+                config.url.as_str(),
+                config.internal_url.as_deref(),
+                config.orbit_url.as_deref(),
+            ),
+            (
+                false,
+                "https://orbit.example.com/office",
+                Some("http://documentserver:80"),
+                Some("http://orbit:8080"),
+            )
+        );
+        assert_eq!(
+            invalid_key(parse(&[(ONLYOFFICE_URL, "https://office.example.com")])),
+            ONLYOFFICE_JWT_SECRET
+        );
+        assert_eq!(
+            invalid_key(parse(&[(ONLYOFFICE_ENABLED, "true")])),
+            ONLYOFFICE_URL
+        );
+        for (key, url) in [
+            (ONLYOFFICE_URL, "office.example.com"),
+            (ONLYOFFICE_URL, "ftp://office.example.com"),
+            (ONLYOFFICE_URL, "https://user:pw@office.example.com"),
+            (ONLYOFFICE_INTERNAL_URL, "http://documentserver/?a=1"),
+            (ONLYOFFICE_ORBIT_URL, "http://orbit:8080/#x"),
+        ] {
+            let mut pairs = vec![
+                (ONLYOFFICE_URL, "https://office.example.com"),
+                (ONLYOFFICE_JWT_SECRET, "shared-secret"),
+            ];
+            pairs.retain(|(name, _)| *name != key);
+            pairs.push((key, url));
+            assert_eq!(invalid_key(parse(&pairs)), key, "{url}");
+        }
+        let lines = parse(&[
+            (ONLYOFFICE_URL, "https://office.example.com"),
+            (ONLYOFFICE_JWT_SECRET, "shared-secret"),
+        ])
+        .unwrap()
+        .redacted_lines()
+        .join("\n");
+        assert!(
+            lines.contains("ORBIT_ONLYOFFICE_JWT_SECRET=[REDACTED]"),
+            "{lines}"
+        );
+        assert!(!lines.contains("shared-secret"), "{lines}");
     }
 
     #[test]

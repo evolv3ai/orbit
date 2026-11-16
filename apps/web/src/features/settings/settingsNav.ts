@@ -1,5 +1,5 @@
 import { useContext, type ComponentType } from 'react'
-import { ArchiveBox, Brush, Card, Chart, ClipboardText, CloudConnection, Cpu, SecurityUser, Driver, Key, Keyboard, Link2, Lock, Login, Notification as Bell, Setting2 as Settings, ShieldTick as ShieldCheck, SmileCircle, Sms as Mail, Sticker, Danger as TriangleAlert, DocumentDownload, Import, User, People as Users, Global, Routing, DirectInbox, Tag, SmsTracking } from 'reicon-react'
+import { ArchiveBox, Brush, Card, Chart, ClipboardText, CloudConnection, Cpu, SecurityUser, Driver, Key, Keyboard, Link2, Lock, Login, Notification as Bell, Setting2 as Settings, ShieldTick as ShieldCheck, SmileCircle, Sms as Mail, Sticker, Danger as TriangleAlert, DocumentDownload, DocumentText, Import, User, People as Users, Global, Routing, DirectInbox, Tag, SmsTracking } from 'reicon-react'
 import type { Permission } from '@orbit/api/generated/types.gen'
 import { RobotIcon } from '@/components/common/icons/RobotIcon'
 import { WorkspaceContext } from '@/features/workspaces/workspaceContext'
@@ -135,6 +135,7 @@ const AREAS: Record<SettingsAreaName, SettingsArea> = {
         label: 'Data',
         items: [
           { to: '/admin/storage', label: 'Storage', icon: CloudConnection },
+          { to: '/admin/office', label: 'Office editing', icon: DocumentText },
           { to: '/admin/backups', label: 'Backups', icon: ArchiveBox },
         ],
       },
