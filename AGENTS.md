@@ -94,3 +94,19 @@ container runs but `docker port orbit-mailpit` prints nothing, it lost its netwo
 
 To make the product update video or release-note screenshots of a release, follow
 [`marketing/release-video/GUIDE.md`](marketing/release-video/GUIDE.md).
+
+## Agent skills
+
+### Issue tracker
+
+Issues are Orbit tasks in the LegacyWorks workspace (`orbit.appster.net`), used through the Orbit MCP; ONLYOFFICE
+work goes in the `OO` project. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five state roles are Orbit statuses (Needs Triage, Needs Info, Ready for Agent, Ready for Human, Won't Fix); the
+two categories are the labels Bug and Enhancement. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `.ai/` first, then `GLOSSARY.md`, `docs/adr/` and `docs/specs/`. See `docs/agents/domain.md`.
