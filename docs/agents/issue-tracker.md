@@ -51,6 +51,29 @@ Project home page: the Orbit Doc **OnlyOffice Integration** (spec pointer and st
 Writes with a personal token appear as that person and send notifications, so say in the text that an
 agent wrote it.
 
+## Chat updates
+
+The OO project has a chat channel that agents can post to through an incoming webhook (the MCP has no
+chat write). Post **one line** when a task moves to **In Review**, **Done** or **Needs Info**, and when
+a run fails (`AGENT FAILED`). Don't post on claim or for routine progress.
+
+- The URL is the secret `ORBIT_CHAT_WEBHOOK_URL_OO` in Infisical project `admin-operator`
+  (`b39906ed-a884-4abf-b652-8b964fdfab48`), env `prod`. Read it into a variable; never print, log or
+  commit it, and never put it in a task, doc or chat message.
+- Body: `{"text": "OO-17 → In Review: versions table added; needs a person to check the migration. <task url>"}`.
+  Slack mrkdwn or Markdown, cut at 4,000 characters.
+- Success is `200` with the body `ok`. A failed post must not fail the task: note it in the
+  `AGENT DONE` comment and move on.
+- No customer or tenant personal data, and no secrets, in messages.
+
+```bash
+URL=$(infisical secrets get ORBIT_CHAT_WEBHOOK_URL_OO \
+  --projectId b39906ed-a884-4abf-b652-8b964fdfab48 --env prod --plain --silent)
+curl -sS -m 10 -X POST -H 'Content-Type: application/json' \
+  -d '{"text":"OO-17 → In Review: … (agent)"}' "$URL"
+unset URL
+```
+
 ## Status ids: OnlyOffice Integration (`OO`)
 
 | Status | Id |
