@@ -153,6 +153,17 @@ As built (OO-8, `apps/server/src/office/editor.rs`, `files.rs` and `jwt.rs`):
 `BlobDownload` (local disk and S3). It checks the office token and, when present, the JWT in the
 `Authorization` header. GET needs no change to the origin check.
 
+As built (OO-9, `download_office_file` in `apps/server/src/office/editor.rs`):
+
+- The office token alone allows the download. An `Authorization: Bearer` header, when the
+  Document Server sends one, must be a token the shared secret signed; its payload is not read.
+- 404 `office_file_not_found` for everything else: no or a wrong token, another file or kind, a
+  file that holds other bytes than the token names (after a save or a replace), and office
+  editing off.
+- The route is not in the OpenAPI document: no client of Orbit calls it.
+- Tested on local disk storage. S3 goes through the same `UploadService::download`; it was not
+  run against a bucket.
+
 ### 4.5 Save callback (OO-10)
 
 `POST /api/v1/office/{kind}/{file_id}/callback`. Machine-to-machine, so its path prefix is added to

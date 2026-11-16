@@ -2,10 +2,12 @@
 //! about one office file.
 
 use axum::extract::{Extension, Path, Query, State};
+use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::routing::get;
 use axum::{Json, Router};
-use orbit_platform::{Id, RequestId, TimestampMillis};
+use orbit_platform::{AuthorizedAttachment, Id, RequestId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use utoipa::{IntoParams, ToSchema};
@@ -16,16 +18,22 @@ use super::routes::OfficeState;
 use super::settings::OfficeSettings;
 use super::token::{OfficeTokens, TOKEN_LIFETIME_MS};
 use super::versions::OfficeFileKind;
+use crate::attachment_routes::download_response;
 use crate::task_routes::{ApiError, authenticate_session};
 
 /// The longest `back` path the editor config carries.
 const MAX_BACK_BYTES: usize = 2048;
 
 pub(super) fn editor_router() -> Router<OfficeState> {
-    Router::new().route(
-        "/api/v1/office/{kind}/{file_id}/config",
-        get(get_office_editor_config),
-    )
+    Router::new()
+        .route(
+            "/api/v1/office/{kind}/{file_id}/config",
+            get(get_office_editor_config),
+        )
+        .route(
+            "/api/v1/office/{kind}/{file_id}/download",
+            get(download_office_file),
+        )
 }
 
 /// What the editor page needs to open one file.
@@ -139,6 +147,82 @@ pub(crate) async fn get_office_editor_config(
         document_server_url: settings.url,
         config,
     }))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct OfficeDownloadQuery {
+    /// The office token of the config's `document.url`.
+    t: Option<String>,
+}
+
+/// The bytes of a file, for the Document Server: it has no session, so the office token of the
+/// address is what allows the download. The token names one version of the file; once the file
+/// holds other bytes, or office editing is off, the answer is 404. Not in the OpenAPI document:
+/// no client of Orbit calls it.
+pub(crate) async fn download_office_file(
+    State(state): State<OfficeState>,
+    Path((kind, file_id)): Path<(String, String)>,
+    Query(query): Query<OfficeDownloadQuery>,
+    headers: HeaderMap,
+    request_id: Option<Extension<RequestId>>,
+) -> Result<Response, ApiError> {
+    let instance = format!("/api/v1/office/{kind}/{file_id}/download");
+    let request_id = request_id.as_ref();
+    let database = state.identity.database();
+    let (Some(kind), Ok(file_id), Some(app_key), Some(token)) = (
+        OfficeFileKind::parse(&kind),
+        file_id.parse::<Id>(),
+        state.app_key.as_ref(),
+        query.t.as_deref(),
+    ) else {
+        return Err(not_found(&instance, request_id));
+    };
+    let now = database
+        .database_now()
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?;
+    let blob_id = OfficeTokens::new(app_key)
+        .verify(token, kind, file_id, now)
+        .ok_or_else(|| not_found(&instance, request_id))?;
+    let settings = state
+        .repository()
+        .get()
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?
+        .filter(|settings| settings.enabled)
+        .ok_or_else(|| not_found(&instance, request_id))?;
+    // The Document Server signs its requests when it is set up to. A signature that is there
+    // must be its own.
+    if let Some(authorization) = headers.get(AUTHORIZATION) {
+        let secret = settings.jwt_secret(app_key).ok_or_else(|| {
+            internal(&instance, request_id).cause("the office secret cannot be decrypted")
+        })?;
+        authorization
+            .to_str()
+            .ok()
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .and_then(|token| jwt::verify(token.trim(), &secret, now))
+            .ok_or_else(|| not_found(&instance, request_id))?;
+    }
+    let file = files::find(database, kind, file_id)
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?
+        .filter(|file| file.blob_id == blob_id && !file.deleted)
+        .ok_or_else(|| not_found(&instance, request_id))?;
+    let download = state
+        .uploads
+        .download(|| async {
+            Ok(AuthorizedAttachment {
+                storage_key: file.storage_key,
+                media_type: file.media_type,
+                display_name: file.name,
+                deleted: false,
+            })
+        })
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?;
+    download_response(download)
+        .ok_or_else(|| internal(&instance, request_id).cause("invalid stored file headers"))
 }
 
 /// Orbit as the Document Server reaches it, without a trailing slash.

@@ -629,3 +629,106 @@ async fn there_is_no_config_while_office_editing_is_off() {
         .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// Asks for the address as the Document Server does: no session, and a signed header when `authorization`.
+async fn download(app: &Router, url: &str, authorization: Option<&str>) -> (StatusCode, Vec<u8>) {
+    let path = url.strip_prefix("http://orbit:8080").expect(url);
+    let mut request = Request::builder().uri(path);
+    if let Some(authorization) = authorization {
+        request = request.header(header::AUTHORIZATION, authorization);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, bytes.to_vec())
+}
+
+#[tokio::test]
+async fn the_document_server_downloads_the_version_its_address_names() {
+    let fixture = Fixture::new().await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let file = id.to_string();
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "attachment", &file, "")
+        .await;
+    let url = body["config"]["document"]["url"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // No session: the token of the address is enough.
+    let (status, bytes) = download(&fixture.app, &url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"first bytes");
+
+    // A signature, when there is one, must be the Document Server's.
+    let signed = jwt::sign(&json!({"payload": {"url": url}}), SECRET);
+    let (status, bytes) = download(&fixture.app, &url, Some(&format!("Bearer {signed}"))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"first bytes");
+    let forged = jwt::sign(&json!({"payload": {"url": url}}), "another");
+    for authorization in [format!("Bearer {forged}"), "Bearer".to_owned(), signed] {
+        let (status, _) = download(&fixture.app, &url, Some(&authorization)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{authorization}");
+    }
+
+    // The token opens no other file, no other kind, and nothing without it.
+    let other = fixture.attachment("other.docx", b"other bytes").await;
+    let (base, token) = url.split_once("?t=").unwrap();
+    for address in [
+        base.to_owned(),
+        format!("{base}?t="),
+        format!("{base}?t={token}A"),
+        format!("http://orbit:8080/api/v1/office/attachment/{other}/download?t={token}"),
+        format!("http://orbit:8080/api/v1/office/page_file/{id}/download?t={token}"),
+        format!("http://orbit:8080/api/v1/office/chat_file/{id}/download?t={token}"),
+    ] {
+        let (status, _) = download(&fixture.app, &address, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{address}");
+    }
+
+    // After a save the file holds other bytes: the old address serves neither version.
+    OfficeFileVersions::new((*fixture.database).clone(), fixture.uploads.clone())
+        .save(
+            OfficeFileKind::Attachment,
+            id,
+            b"second bytes",
+            Some(fixture.owner_id),
+        )
+        .await
+        .unwrap();
+    let (status, _) = download(&fixture.app, &url, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "attachment", &file, "")
+        .await;
+    let fresh = body["config"]["document"]["url"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (status, bytes) = download(&fixture.app, &fresh, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"second bytes");
+
+    // Turning office editing off closes the address.
+    fixture.save_settings(false).await;
+    let (status, _) = download(&fixture.app, &fresh, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_document_server_downloads_a_page_file() {
+    let fixture = Fixture::new().await;
+    let id = fixture.page_file("budget.xlsx", b"sheet bytes").await;
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "page_file", &id.to_string(), "")
+        .await;
+    let url = body["config"]["document"]["url"].as_str().unwrap();
+    let (status, bytes) = download(&fixture.app, url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"sheet bytes");
+}
