@@ -23,8 +23,8 @@ Work in flight uses three more statuses outside the triage machine: **In Progres
 | `bug` | Bug | Something that used to work, or should work, is broken. |
 | `enhancement` | Enhancement | Something new, or an improvement to something that works. |
 
-The 0.3.0 MCP cannot apply labels. Recommend the category in a comment (`Category: Bug`) and ask the
-user to set it.
+Apply a label with `label_ids` on `create_task` or `update_task`. The ids are in
+`docs/agents/issue-tracker.md`.
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), set the matching status or
-recommend the matching label from these tables.
+apply the matching label from these tables.

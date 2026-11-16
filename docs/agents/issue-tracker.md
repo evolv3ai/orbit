@@ -6,8 +6,9 @@ never file into `coollabsio/orbit` (upstream).
 
 Use the **Orbit MCP server** (`orbit` in Claude Code, endpoint `https://orbit.appster.net/mcp`).
 Instance details, tokens and the REST alternative are in the workstation's
-`D:\spaces-orbit\integration.md`. The live server is **0.3.0**: its MCP has fewer tools than this
-fork's `main` branch, so trust the tools the connection lists, not this repo's `docs/mcp.md`.
+`D:\spaces-orbit\integration.md`. The live server runs an image built from this fork's
+`feat/onlyoffice` branch, pinned to a commit, and still reports version `0.3.0`. It can be behind
+your checkout, so trust the tools the connection lists over this repo's `docs/mcp.md`.
 
 ## Which project
 
@@ -27,17 +28,19 @@ Project home page: the Orbit Doc **OnlyOffice Integration** (spec pointer and st
   page; follow `next_cursor`. Filter by status client-side using the status ids below.
 - **Sub-issue of a parent**: `create_task` with `parent_task_id`; list children with
   `list_tasks(parent_task_id=…)`.
-- **Blocking**: Orbit 0.3.0 has no task dependencies. Put `Blocked by: OO-17, OO-18` as the first line of
-  the blocked task's description. A task is unblocked when every blocker is **Done** or **Won't Fix**.
+- **Blocking**: put `Blocked by: OO-17, OO-18` as the first line of the blocked task's description. A
+  task is unblocked when every blocker is **Done** or **Won't Fix**. The MCP has no tool to read or
+  write task relations (the REST API has `/tasks/{task}/relations`), so this line is what agents read.
 - **Comment**: `create_comment` (Markdown).
 - **Change status**: `update_task` with `status_id` and the `expected_version` from your latest read. On
   "version changed", read again and retry.
-- **Labels**: the 0.3.0 MCP can **read** labels (`list_labels`, `label_ids` on a task) but cannot apply
-  them. When a skill says to apply a category label, recommend it in a comment
-  (`Category: Bug` or `Category: Enhancement`) and tell the user to set it.
+- **Labels**: set `label_ids` on `create_task` or `update_task`, with ids from `list_labels`. On
+  `update_task` it replaces the whole set, so send the task's current ids plus the new one.
 - **Close**: comment with the explanation first, then set the status to **Done** or **Won't Fix**.
   Never delete a task.
-- **Statuses and labels cannot be created over MCP.** A person adds them in project settings.
+- **New statuses and labels**: the MCP has no tool to create them. Use the REST API
+  (`POST …/projects/{project_id}/statuses` or `…/labels`, see `docs/public-api.md`) or ask a person to
+  add them in project settings.
 
 ## Claiming and finishing work (agents)
 
@@ -90,6 +93,15 @@ unset URL
 
 Status ids are per project. For any other project, call `list_task_statuses` and match by name.
 
+## Label ids: OnlyOffice Integration (`OO`)
+
+| Label | Id |
+| --- | --- |
+| Bug | `01a1e56f-de63-77a9-a4cf-94f2ac23cf2c` |
+| Enhancement | `01a1e570-05d2-76d1-9694-7735a25a9c78` |
+
+Label ids are per project. For any other project, call `list_labels` and match by name.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(This fork takes no external PRs; `/triage` reads this flag.)_
@@ -109,7 +121,7 @@ Used by `/wayfinder`. The **map** is one parent task; **child** tickets are its 
 
 - **Map**: a task titled `[map] <topic>` holding the Notes / Decisions-so-far / Fog body.
 - **Child ticket**: `create_task` with `parent_task_id` set to the map. Prefix the title with its type:
-  `[research]`, `[prototype]`, `[grilling]` or `[task]` (labels can't be applied over MCP).
+  `[research]`, `[prototype]`, `[grilling]` or `[task]`.
 - **Blocking**: the `Blocked by:` line, as in Conventions.
 - **Frontier query**: `list_tasks(parent_task_id=<map>)`, keep children not Done / Won't Fix / Duplicate,
   drop any with an open blocker or an assignee; first by `number` wins.
