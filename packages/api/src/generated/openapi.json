@@ -20034,6 +20034,176 @@
         ]
       }
     },
+    "/api/v1/office/{kind}/{file_id}/config": {
+      "get": {
+        "tags": [
+          "crate::office::editor"
+        ],
+        "summary": "The config that opens a file of a task (`attachment`) or of a Docs page (`page_file`) in the\noffice editor. The person edits when they may change the file and the editor saves its format\n(`docx`, `xlsx`, `pptx`); otherwise the file opens read-only.",
+        "operationId": "get_office_editor_config",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "`attachment` or `page_file`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "description": "The language of the editor, for example `en` or `pt-BR`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "theme",
+            "in": "query",
+            "description": "`light` or `dark`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "back",
+            "in": "query",
+            "description": "The path in Orbit that the editor's \"Open file location\" goes back to, for example\n`/w/acme/tasks/OO-7`. It starts with one `/`.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "X-Orbit-Contract",
+            "in": "header",
+            "description": "Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeEditorView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_proxy_headers",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "authentication_required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "office_file_not_found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "contract_mismatch, office_not_configured",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "office_file_unsupported",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "internal_error or another documented stable code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/push/apns": {
       "get": {
         "tags": [
@@ -78002,6 +78172,24 @@
             "format": "int32",
             "description": "Files no note links to or embeds.",
             "minimum": 0
+          }
+        }
+      },
+      "OfficeEditorView": {
+        "type": "object",
+        "description": "What the editor page needs to open one file.",
+        "required": [
+          "document_server_url",
+          "config"
+        ],
+        "properties": {
+          "config": {
+            "type": "object",
+            "description": "The config for `new DocsAPI.DocEditor(…)`, signed in its `token` field. Pass it as it is."
+          },
+          "document_server_url": {
+            "type": "string",
+            "description": "The Document Server as browsers reach it. The page loads\n`{document_server_url}/web-apps/apps/api/documents/api.js` from it."
           }
         }
       },

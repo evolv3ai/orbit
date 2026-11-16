@@ -681,8 +681,10 @@ impl App {
                 ),
                 office: crate::office::routes::OfficeState::new(
                     Arc::clone(&identity),
+                    attachment_state.uploads.clone(),
                     cookie_mode,
                     app_key,
+                    &config.http.public_origin,
                 ),
             },
             health,

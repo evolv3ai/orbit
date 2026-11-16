@@ -4956,6 +4956,23 @@ export type ObsidianSkippedFiles = {
     unreferenced: number;
 };
 
+/**
+ * What the editor page needs to open one file.
+ */
+export type OfficeEditorView = {
+    /**
+     * The config for `new DocsAPI.DocEditor(…)`, signed in its `token` field. Pass it as it is.
+     */
+    config: {
+        [key: string]: unknown;
+    };
+    /**
+     * The Document Server as browsers reach it. The page loads
+     * `{document_server_url}/web-apps/apps/api/documents/api.js` from it.
+     */
+    document_server_url: string;
+};
+
 export type OfficeSettingsBody = {
     enabled: boolean;
     /**
@@ -18629,6 +18646,82 @@ export type PutNotificationPreferencesResponses = {
 };
 
 export type PutNotificationPreferencesResponse = PutNotificationPreferencesResponses[keyof PutNotificationPreferencesResponses];
+
+export type GetOfficeEditorConfigData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path: {
+        /**
+         * `attachment` or `page_file`
+         */
+        kind: string;
+        file_id: string;
+    };
+    query?: {
+        /**
+         * The language of the editor, for example `en` or `pt-BR`.
+         */
+        lang?: string | null;
+        /**
+         * `light` or `dark`.
+         */
+        theme?: string | null;
+        /**
+         * The path in Orbit that the editor's "Open file location" goes back to, for example
+         * `/w/acme/tasks/OO-7`. It starts with one `/`.
+         */
+        back?: string | null;
+    };
+    url: '/api/v1/office/{kind}/{file_id}/config';
+};
+
+export type GetOfficeEditorConfigErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * office_file_not_found
+     */
+    404: TaskProblem;
+    /**
+     * contract_mismatch, office_not_configured
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * office_file_unsupported
+     */
+    422: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type GetOfficeEditorConfigError = GetOfficeEditorConfigErrors[keyof GetOfficeEditorConfigErrors];
+
+export type GetOfficeEditorConfigResponses = {
+    200: OfficeEditorView;
+};
+
+export type GetOfficeEditorConfigResponse = GetOfficeEditorConfigResponses[keyof GetOfficeEditorConfigResponses];
 
 export type ListApnsDevicesData = {
     body?: never;

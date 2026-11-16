@@ -8,7 +8,7 @@ use axum::extract::{Extension, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use orbit_platform::{RequestId, TimestampMillis};
+use orbit_platform::{RequestId, TimestampMillis, UploadService};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -27,26 +27,33 @@ const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct OfficeState {
-    identity: Arc<IdentityRepository>,
-    cookie_mode: CookieMode,
-    app_key: Option<[u8; 32]>,
+    pub(super) identity: Arc<IdentityRepository>,
+    pub(super) uploads: UploadService,
+    pub(super) cookie_mode: CookieMode,
+    pub(super) app_key: Option<[u8; 32]>,
+    /// Orbit as browsers reach it (`ORBIT_PUBLIC_ORIGIN`).
+    pub(super) public_origin: String,
 }
 
 impl OfficeState {
     #[must_use]
     pub fn new(
         identity: Arc<IdentityRepository>,
+        uploads: UploadService,
         cookie_mode: CookieMode,
         app_key: Option<[u8; 32]>,
+        public_origin: &str,
     ) -> Self {
         Self {
             identity,
+            uploads,
             cookie_mode,
             app_key,
+            public_origin: public_origin.to_owned(),
         }
     }
 
-    fn repository(&self) -> OfficeSettingsRepository {
+    pub(super) fn repository(&self) -> OfficeSettingsRepository {
         OfficeSettingsRepository::new(self.identity.database().clone())
     }
 }
@@ -60,6 +67,7 @@ pub fn office_router(state: OfficeState) -> Router {
                 .delete(remove_office_settings),
         )
         .route(TEST, post(test_office_connection))
+        .merge(super::editor::editor_router())
         .with_state(state)
 }
 

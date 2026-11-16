@@ -8,8 +8,8 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use axum::routing::get;
 use orbit_platform::{
-    Config, Database, HttpPlatformLayer, OriginPolicy, PasswordService, TestDatabase,
-    TimestampMillis,
+    AttachmentMutationCoordinator, Config, Database, HttpPlatformLayer, LocalBlobStore,
+    OriginPolicy, PasswordService, TestDatabase, TimestampMillis, UploadLimits, UploadService,
 };
 use orbit_server::auth_routes::CookieMode;
 use orbit_server::office::routes::{OfficeState, office_router};
@@ -57,10 +57,21 @@ async fn root_cookie(database: &Database) -> String {
 
 /// The office routes behind the HTTP layer, with the content security policy that the settings drive.
 fn app(database: &Database, app_key: Option<[u8; 32]>) -> Router {
+    // The settings routes store no file: the folder is never created.
+    let uploads = UploadService::new(
+        database.clone(),
+        Arc::new(LocalBlobStore::new(
+            std::env::temp_dir().join("orbit-office-settings-test-unused"),
+        )),
+        AttachmentMutationCoordinator::default(),
+        UploadLimits::default(),
+    );
     office_router(OfficeState::new(
         Arc::new(IdentityRepository::new(database.clone())),
+        uploads,
         CookieMode::secure(),
         app_key,
+        ORIGIN,
     ))
     .layer(
         HttpPlatformLayer::new(OriginPolicy::new(ORIGIN))

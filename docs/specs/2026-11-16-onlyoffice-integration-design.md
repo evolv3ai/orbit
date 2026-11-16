@@ -104,6 +104,10 @@ HKDF subkey (`"orbit office token v1"`) of the app key, binding **file kind, fil
 with a short lifetime (5 minutes; the Document Server downloads once when the first editor opens a
 given `document.key`). Binding the blob id means a token never serves a newer or older version.
 
+As built (OO-8, `apps/server/src/office/token.rs`): `OfficeTokens::issue` and `verify`. The token
+carries the blob id and the expiry; the HMAC also covers the kind and the file id, which the URL
+names. `verify` returns the blob id, and OO-9 serves the file only while it still holds that blob.
+
 ### 4.3 Editor config (OO-8)
 
 `GET /api/v1/office/{kind}/{file_id}/config` (session auth). Returns the config for
@@ -121,6 +125,27 @@ given `document.key`). Binding the blob id means a token never serves a newer or
 - `editorConfig.user`: Orbit user id and display name. `editorConfig.lang` and `uiTheme` from the
   user's settings.
 - `editorConfig.customization.goback`: back to the task, page or conversation.
+
+As built (OO-8, `apps/server/src/office/editor.rs`, `files.rs` and `jwt.rs`):
+
+- The answer is `{ "document_server_url", "config" }`. The page loads `api.js` from the first and
+  passes the second to `DocsAPI.DocEditor` as it is.
+- Kinds: `attachment` and `page_file`. **`chat_file` is not built yet** (404): its access check is
+  private to the chat repository.
+- Access reuses `AttachmentRepository::authorize_task`, `require_comment_editor` and
+  `PageFileRepository::authorize_upload`. A file of a comment is read-only for the people who may
+  not edit the comment. Guests get 404, as on the download routes.
+- Formats (`files::office_format`, by the extension of the file name): `docx`, `xlsx` and `pptx`
+  open for editing. `doc`, `docm`, `dotx`, `odt`, `rtf`, `xls`, `xlsm`, `ods`, `ppt`, `ppsx`,
+  `odp` and `pdf` open read-only, because the Document Server would save them in another format
+  than the file has. Other files: 422 `office_file_unsupported`.
+- `lang`, `theme` (`light` or `dark`) and `back` (a path of this Orbit) are query parameters,
+  because the server does not store them. A value that does not pass its check is left out.
+  `goback.url` is Orbit's public address plus `back`.
+- The token has no `exp`. It is checked when the editor opens; what a late use of it could reach
+  is bounded by the 5-minute office token inside `document.url`.
+- Errors: 401, 404 `office_file_not_found` (no such file, or no read access), 409
+  `office_not_configured` (no Document Server, or the switch is off).
 
 ### 4.4 Download (OO-9)
 

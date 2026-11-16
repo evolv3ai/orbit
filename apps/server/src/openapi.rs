@@ -498,6 +498,7 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::office::routes::save_office_settings,
         crate::office::routes::remove_office_settings,
         crate::office::routes::test_office_connection,
+        crate::office::editor::get_office_editor_config,
     )
 )]
 struct ApiDocument;
@@ -638,6 +639,7 @@ fn problem_schema(route: &str) -> &'static str {
         || route.contains("/billing")
         || route.contains("/webhooks")
         || route.contains("/settings/office")
+        || route.starts_with("/api/v1/office/")
     {
         "TaskProblem"
     } else if route.starts_with("/api/v1/auth") || route.starts_with("/api/v1/setup") {
@@ -1147,6 +1149,11 @@ fn problem_responses(operation_id: &str) -> BTreeMap<&'static str, String> {
         "remove_office_settings" => {
             add_code(&mut responses, "403", "installation_admin_required");
             add_code(&mut responses, "409", "set_by_environment");
+        }
+        "get_office_editor_config" => {
+            add_code(&mut responses, "404", "office_file_not_found");
+            add_code(&mut responses, "409", "office_not_configured");
+            add_code(&mut responses, "422", "office_file_unsupported");
         }
         "test_office_connection" => {
             add_code(&mut responses, "403", "installation_admin_required");
