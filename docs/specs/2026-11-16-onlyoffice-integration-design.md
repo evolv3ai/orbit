@@ -187,6 +187,32 @@ of truth.
   while open), still store the bytes as a new version, and log the conflict. Nothing is lost.
 - The version is attributed to `users[0]`, the last user who sent changes.
 
+As built (OO-10, `apps/server/src/office/callback.rs`):
+
+- Answers: `{"error":0}`, or `{"error":1}` with 400 (not a callback of this file), 403 (no valid
+  token, or a `url` that is not on the Document Server), 404 (no such file, or office editing
+  off), 413 (over the file size limit), 502 (the saved file could not be fetched) or 500. The
+  reason goes to the server log only.
+- The `key` must be a key of the file of the address (`{file_id}-…`). The file must be one the
+  editor opens for editing (`docx`, `xlsx`, `pptx`), and a `filetype` in the callback must match.
+- The saved file is fetched from `url` as it is given, when its origin is the public or the
+  internal Document Server URL. No redirect is followed. Orbit does not rewrite a public address
+  to the internal one: if the Document Server names an address that Orbit cannot reach, saves
+  fail with 502.
+- `users[0]` is the author only when it is an account of this Orbit; otherwise the version has
+  no author.
+- A save writes the audit event `office.file_saved` to the workspace; status 3 and 7 write
+  `office.save_failed` and a warning to the log. **Not built:** a mark on the file and a
+  notification to the last editor. The editor itself shows the people in the document that the
+  save failed.
+- **Force save (status 6) is stored like a save, so the file's key changes while people still
+  edit.** Someone who opens the file then gets a new editing session, apart from the people
+  already in it, and the later save of the old session replaces the newer bytes (they are kept
+  as a version). Orbit does not turn force save on, so this happens only when it is turned on in
+  the Document Server. A fix needs a stored key per editing session.
+- The web app is not told that a file changed: an open task or page shows the new size after a
+  reload.
+
 ### 4.6 Versions (new)
 
 Orbit references point at one blob and have no history. Saving in place would lose the previous

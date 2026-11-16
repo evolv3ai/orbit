@@ -5,7 +5,7 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use orbit_platform::{AuthorizedAttachment, Id, RequestId, TimestampMillis};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,10 @@ pub(super) fn editor_router() -> Router<OfficeState> {
         .route(
             "/api/v1/office/{kind}/{file_id}/download",
             get(download_office_file),
+        )
+        .route(
+            "/api/v1/office/{kind}/{file_id}/callback",
+            post(super::callback::office_callback),
         )
 }
 

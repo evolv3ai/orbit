@@ -2,10 +2,12 @@
 //! allows, and what its signature covers.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
+use axum::routing::get;
 use orbit_platform::{
     AttachmentMutationCoordinator, AuthenticatedUser, Id, LocalBlobStore, NewAttachmentReference,
     PasswordService, TestDatabase, TimestampMillis, UploadLimits, UploadService,
@@ -128,6 +130,11 @@ impl Fixture {
 
     /// Saves the Document Server in Admin. The Document Server reaches Orbit at `http://orbit:8080`.
     async fn save_settings(&self, enabled: bool) {
+        self.save_settings_with(enabled, None).await;
+    }
+
+    /// As `save_settings`, with the address at which Orbit reaches the Document Server.
+    async fn save_settings_with(&self, enabled: bool, internal_url: Option<&str>) {
         let (status, _) = send(
             &self.app,
             json_request(
@@ -137,6 +144,7 @@ impl Fixture {
                 &json!({
                     "enabled": enabled,
                     "url": "https://office.example.com",
+                    "internal_url": internal_url,
                     "orbit_url": "http://orbit:8080/",
                     "jwt_secret": SECRET,
                 }),
@@ -731,4 +739,358 @@ async fn the_document_server_downloads_a_page_file() {
     let (status, bytes) = download(&fixture.app, url, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(bytes, b"sheet bytes");
+}
+
+/// A Document Server that hands over `bytes` at `/cache/out.docx`, and redirects at `/cache/moved`.
+/// Returns its `http://127.0.0.1:{port}` address and how often the file was asked for.
+async fn document_server(bytes: &'static [u8]) -> (String, Arc<AtomicUsize>) {
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&hits);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = Router::new()
+        .route(
+            "/cache/out.docx",
+            get(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { bytes }
+            }),
+        )
+        .route(
+            "/cache/moved",
+            get(|| async { axum::response::Redirect::temporary("/cache/out.docx") }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{address}"), hits)
+}
+
+/// Sends a callback as the Document Server does. `token`: where the signed copy goes.
+async fn callback(
+    app: &Router,
+    kind: &str,
+    file: Id,
+    body: &Value,
+    token: Token,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/office/{kind}/{file}/callback"))
+        .header(header::CONTENT_TYPE, "application/json");
+    let mut sent = body.clone();
+    match token {
+        Token::Body(secret) => sent["token"] = json!(jwt::sign(body, secret)),
+        Token::Header(secret) => {
+            let signed = jwt::sign(&json!({"payload": body}), secret);
+            request = request.header(header::AUTHORIZATION, format!("Bearer {signed}"));
+        }
+        Token::None => {}
+    }
+    send(app, request.body(Body::from(sent.to_string())).unwrap()).await
+}
+
+enum Token {
+    Body(&'static str),
+    Header(&'static str),
+    None,
+}
+
+impl Fixture {
+    async fn bytes_of_attachment(&self, id: Id) -> Vec<u8> {
+        let (_, body) = self
+            .config(&self.owner_cookie, "attachment", &id.to_string(), "")
+            .await;
+        let url = body["config"]["document"]["url"].as_str().unwrap();
+        download(&self.app, url, None).await.1
+    }
+
+    async fn key_of_attachment(&self, id: Id) -> String {
+        let (_, sha256) = self.blob_of_attachment(id).await;
+        format!("{id}-{}", &sha256[..16])
+    }
+
+    async fn versions(&self, id: Id) -> Vec<Option<String>> {
+        sqlx::query_scalar(
+            "SELECT saved_by FROM office_file_versions WHERE file_id = $1 ORDER BY created_at, id",
+        )
+        .bind(id.to_string())
+        .fetch_all(self.database.pool())
+        .await
+        .unwrap()
+    }
+
+    async fn audit_actions(&self) -> Vec<String> {
+        sqlx::query_scalar(
+            "SELECT action FROM audit_events WHERE action LIKE 'office.%' ORDER BY occurred_at, id",
+        )
+        .fetch_all(self.database.pool())
+        .await
+        .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn a_save_from_the_document_server_becomes_the_file_and_keeps_the_earlier_bytes() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, hits) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let key = fixture.key_of_attachment(id).await;
+    let saved = json!({
+        "key": key,
+        "status": 2,
+        "url": format!("{server}/cache/out.docx"),
+        "filetype": "docx",
+        "users": [fixture.owner_id.to_string()],
+    });
+
+    // While people edit, and when they close without changes, there is nothing to store.
+    for status in [1, 4] {
+        let body = json!({"key": key, "status": status, "users": [fixture.owner_id.to_string()]});
+        let (status, answer) =
+            callback(&fixture.app, "attachment", id, &body, Token::Body(SECRET)).await;
+        assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.bytes_of_attachment(id).await, b"first bytes");
+
+    let (status, answer) =
+        callback(&fixture.app, "attachment", id, &saved, Token::Body(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(fixture.bytes_of_attachment(id).await, b"edited bytes");
+    assert_eq!(
+        fixture.versions(id).await,
+        [Some(fixture.owner_id.to_string())]
+    );
+    assert_ne!(fixture.key_of_attachment(id).await, key);
+    assert_eq!(fixture.audit_actions().await, ["office.file_saved"]);
+
+    // The Document Server repeats a callback it got no answer to: no second version.
+    let (status, answer) = callback(
+        &fixture.app,
+        "attachment",
+        id,
+        &saved,
+        Token::Header(SECRET),
+    )
+    .await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(fixture.versions(id).await.len(), 1);
+    assert_eq!(fixture.audit_actions().await.len(), 1);
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_save_with_an_old_key_is_stored_and_an_unknown_editor_is_left_out() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, _) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let old_key = fixture.key_of_attachment(id).await;
+    // The file gets other bytes while it is open in the editor.
+    OfficeFileVersions::new((*fixture.database).clone(), fixture.uploads.clone())
+        .save(
+            OfficeFileKind::Attachment,
+            id,
+            b"second bytes",
+            Some(fixture.owner_id),
+        )
+        .await
+        .unwrap();
+
+    let body = json!({
+        "key": old_key,
+        "status": 6,
+        "url": format!("{server}/cache/out.docx"),
+        "users": [Id::new_v7().to_string()],
+    });
+    let (status, answer) =
+        callback(&fixture.app, "attachment", id, &body, Token::Header(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(fixture.bytes_of_attachment(id).await, b"edited bytes");
+    // Both earlier contents are versions; the second save has no known author.
+    assert_eq!(
+        fixture.versions(id).await,
+        [Some(fixture.owner_id.to_string()), None]
+    );
+}
+
+#[tokio::test]
+async fn a_page_file_is_saved_and_a_failed_save_is_recorded() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, hits) = document_server(b"edited sheet").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let id = fixture.page_file("budget.xlsx", b"sheet").await;
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "page_file", &id.to_string(), "")
+        .await;
+    let key = body["config"]["document"]["key"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let failed = json!({"key": key, "status": 3, "users": [fixture.owner_id.to_string()]});
+    let (status, answer) =
+        callback(&fixture.app, "page_file", id, &failed, Token::Body(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.audit_actions().await, ["office.save_failed"]);
+
+    let saved = json!({
+        "key": key,
+        "status": 2,
+        "url": format!("{server}/cache/out.docx"),
+        "filetype": "xlsx",
+        "users": [fixture.owner_id.to_string()],
+    });
+    let (status, answer) =
+        callback(&fixture.app, "page_file", id, &saved, Token::Body(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "page_file", &id.to_string(), "")
+        .await;
+    let url = body["config"]["document"]["url"].as_str().unwrap();
+    assert_eq!(download(&fixture.app, url, None).await.1, b"edited sheet");
+    assert_eq!(fixture.versions(id).await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_callback_that_is_not_the_document_servers_stores_nothing() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, hits) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let other = fixture.attachment("other.docx", b"other bytes").await;
+    let legacy = fixture.attachment("old.xls", b"legacy bytes").await;
+    let key = fixture.key_of_attachment(id).await;
+    let good = format!("{server}/cache/out.docx");
+    let save = |key: &str, url: &str| json!({"key": key, "status": 2, "url": url, "users": [fixture.owner_id.to_string()]});
+    let app = &fixture.app;
+
+    // Without a token, with a token of another secret, and with a body that is not JSON.
+    let body = save(&key, &good);
+    for token in [
+        Token::None,
+        Token::Body("another"),
+        Token::Header("another"),
+    ] {
+        let (status, answer) = callback(app, "attachment", id, &body, token).await;
+        assert_eq!(
+            (status, answer),
+            (StatusCode::FORBIDDEN, json!({"error": 1}))
+        );
+    }
+    // The signed token decides, not the body around it.
+    let mut tampered = json!({"key": key, "status": 1});
+    tampered["token"] = json!(jwt::sign(&tampered, SECRET));
+    tampered["status"] = json!(2);
+    tampered["url"] = json!(good);
+    let request = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/office/attachment/{id}/callback"))
+        .body(Body::from(tampered.to_string()))
+        .unwrap();
+    assert_eq!(
+        send(app, request).await,
+        (StatusCode::OK, json!({"error": 0}))
+    );
+
+    // An address that is not on the Document Server is never asked: no request leaves Orbit.
+    let (elsewhere, elsewhere_hits) = document_server(b"planted bytes").await;
+    for url in [
+        format!("{elsewhere}/cache/out.docx"),
+        "http://169.254.169.254/latest/meta-data/".to_owned(),
+        "file:///etc/passwd".to_owned(),
+    ] {
+        let (status, answer) = callback(
+            app,
+            "attachment",
+            id,
+            &save(&key, &url),
+            Token::Body(SECRET),
+        )
+        .await;
+        assert_eq!(
+            (status, answer),
+            (StatusCode::FORBIDDEN, json!({"error": 1})),
+            "{url}"
+        );
+    }
+    assert_eq!(elsewhere_hits.load(Ordering::SeqCst), 0);
+    // A redirect is not followed.
+    let moved = save(&key, &format!("{server}/cache/moved"));
+    let (status, _) = callback(app, "attachment", id, &moved, Token::Body(SECRET)).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+
+    // The key of another file, a read-only format, another saved format, and no address.
+    let other_key = fixture.key_of_attachment(other).await;
+    let (status, _) = callback(
+        app,
+        "attachment",
+        id,
+        &save(&other_key, &good),
+        Token::Body(SECRET),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let legacy_key = fixture.key_of_attachment(legacy).await;
+    let (status, _) = callback(
+        app,
+        "attachment",
+        legacy,
+        &save(&legacy_key, &good),
+        Token::Body(SECRET),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let mut converted = save(&key, &good);
+    converted["filetype"] = json!("pdf");
+    let (status, _) = callback(app, "attachment", id, &converted, Token::Body(SECRET)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = callback(
+        app,
+        "attachment",
+        id,
+        &json!({"key": key, "status": 2}),
+        Token::Body(SECRET),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A file that does not exist, another kind, and office editing off.
+    let gone = Id::new_v7();
+    let (status, _) = callback(
+        app,
+        "attachment",
+        gone,
+        &save(&format!("{gone}-0"), &good),
+        Token::Body(SECRET),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = callback(app, "chat_file", id, &body, Token::Body(SECRET)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    for (file, bytes) in [(id, &b"first bytes"[..]), (legacy, b"legacy bytes")] {
+        assert_eq!(fixture.versions(file).await.len(), 0);
+        let (_, blob) = fixture.blob_of_attachment(file).await;
+        assert_eq!(blob, hex_sha256(bytes));
+    }
+    assert!(fixture.audit_actions().await.is_empty());
+
+    fixture.save_settings_with(false, Some(&server)).await;
+    let (status, answer) = callback(app, "attachment", id, &body, Token::Body(SECRET)).await;
+    assert_eq!(
+        (status, answer),
+        (StatusCode::NOT_FOUND, json!({"error": 1}))
+    );
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
