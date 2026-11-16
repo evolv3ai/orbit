@@ -160,7 +160,23 @@ near line 714) must count `office_file_versions`, or reconciliation reclaims old
 rows go with their file (trash purge, owner delete, workspace delete) and are covered by backup
 and export.
 
-Phase 1 keeps the last 20 versions per file. A version list and restore UI is Phase 2 (via the
+As built (OO-17, `apps/server/src/office/versions.rs`, `OfficeFileVersions::save`):
+
+- `saved_by` and `created_at` of a row are the save that **replaced** that blob: who sent the last
+  changes, and when. So the author of the current bytes is on the newest row.
+- `file_id` has no foreign key (it is an attachment or a page file, by `file_kind`). Two delete
+  triggers, on `attachment_references` and `page_files`, remove the versions with their file on
+  every path (direct delete, cascade, trash purge, workspace purge). No delete code changed.
+- Upstream made `blob_id` immutable on both tables (triggers in migrations 0009 and 0025). The
+  versions migration relaxes them: `blob_id` may change to a blob of the same workspace. Workspace,
+  task, comment and page stay immutable. **If upstream recreates those triggers, saves break**;
+  `apps/server/tests/office_versions.rs` catches it.
+- A full backup holds the rows (it copies the database). The workspace export carries current
+  files only, as it does for page history.
+- An admin "delete file" (`UploadService::delete_blob`) is unchanged: it can remove the bytes of a
+  blob that is also an older version.
+
+Phase 1 keeps the last 20 versions per file (`MAX_VERSIONS_PER_FILE`). A version list and restore UI is Phase 2 (via the
 editor's `onRequestHistory` events).
 
 ## 5. Web (OO-4, OO-11, OO-12)

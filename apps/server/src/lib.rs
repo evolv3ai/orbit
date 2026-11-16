@@ -37,6 +37,7 @@ pub mod oauth;
 pub mod object_storage;
 pub mod obsidian;
 pub mod obsidian_import_routes;
+pub mod office;
 pub mod openapi;
 pub mod orbit_import;
 pub mod orbit_import_routes;
