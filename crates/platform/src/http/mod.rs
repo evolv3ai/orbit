@@ -22,7 +22,9 @@ use rate_limit::RateLimiter;
 
 pub use limits::{HttpLimits, LargeUpload};
 pub use request_id::RequestId;
-pub use security::{ClientIp, OriginPolicy, RequestTransport, bearer_token};
+pub use security::{
+    ClientIp, CspOfficeOrigin, InvalidCspOrigin, OriginPolicy, RequestTransport, bearer_token,
+};
 
 /// Why a handler answered 5xx. The handler puts it in the response extensions, and the HTTP layer writes it to the
 /// `http request failed` log line. The client never sees it: it gets only the request ID.
@@ -37,6 +39,7 @@ pub struct HttpPlatformLayer {
     limits: HttpLimits,
     contract_id: Option<String>,
     csp_script_hash: Option<String>,
+    csp_office_origin: CspOfficeOrigin,
     rate_limiter: RateLimiter,
     secure_transport_required: bool,
 }
@@ -49,6 +52,7 @@ impl HttpPlatformLayer {
             limits: HttpLimits::default(),
             contract_id: None,
             csp_script_hash: None,
+            csp_office_origin: CspOfficeOrigin::default(),
             rate_limiter: RateLimiter::default(),
             secure_transport_required: false,
         }
@@ -69,6 +73,13 @@ impl HttpPlatformLayer {
     #[must_use]
     pub fn with_csp_script_hash(mut self, hash: impl Into<String>) -> Self {
         self.csp_script_hash = Some(hash.into());
+        self
+    }
+
+    /// The office Document Server that pages may load a script from and frame, while one is set.
+    #[must_use]
+    pub fn with_csp_office_origin(mut self, origin: CspOfficeOrigin) -> Self {
+        self.csp_office_origin = origin;
         self
     }
 
@@ -110,6 +121,7 @@ impl<S> Layer<S> for HttpPlatformLayer {
             limits: self.limits,
             contract_id: self.contract_id.clone(),
             csp_script_hash: self.csp_script_hash.clone(),
+            csp_office_origin: self.csp_office_origin.clone(),
             rate_limiter: self.rate_limiter.clone(),
             secure_transport_required: self.secure_transport_required,
             readiness: InnerReadiness::Checking,
@@ -131,6 +143,7 @@ pub struct HttpPlatformService<S> {
     limits: HttpLimits,
     contract_id: Option<String>,
     csp_script_hash: Option<String>,
+    csp_office_origin: CspOfficeOrigin,
     rate_limiter: RateLimiter,
     secure_transport_required: bool,
     readiness: InnerReadiness,
@@ -144,6 +157,7 @@ impl<S: Clone> Clone for HttpPlatformService<S> {
             limits: self.limits,
             contract_id: self.contract_id.clone(),
             csp_script_hash: self.csp_script_hash.clone(),
+            csp_office_origin: self.csp_office_origin.clone(),
             rate_limiter: self.rate_limiter.clone(),
             secure_transport_required: self.secure_transport_required,
             readiness: InnerReadiness::Checking,
@@ -186,6 +200,7 @@ where
         let limits = self.limits;
         let contract_id = self.contract_id.clone();
         let csp_script_hash = self.csp_script_hash.clone();
+        let csp_office_origin = self.csp_office_origin.get();
         let rate_limiter = self.rate_limiter.clone();
         let secure_transport_required = self.secure_transport_required;
 
@@ -211,6 +226,7 @@ where
                         &request_id,
                         false,
                         csp_script_hash.as_deref(),
+                        csp_office_origin.as_deref(),
                     ));
                 }
             };
@@ -228,6 +244,7 @@ where
                     &request_id,
                     false,
                     csp_script_hash.as_deref(),
+                    csp_office_origin.as_deref(),
                 ));
             }
 
@@ -244,6 +261,7 @@ where
                     &request_id,
                     transport.is_secure(),
                     csp_script_hash.as_deref(),
+                    csp_office_origin.as_deref(),
                 ));
             }
 
@@ -265,6 +283,7 @@ where
                     &request_id,
                     transport.is_secure(),
                     csp_script_hash.as_deref(),
+                    csp_office_origin.as_deref(),
                 ));
             }
 
@@ -296,6 +315,7 @@ where
                         &request_id,
                         transport.is_secure(),
                         csp_script_hash.as_deref(),
+                        csp_office_origin.as_deref(),
                     ));
                 }
             };
@@ -306,6 +326,7 @@ where
                     &request_id,
                     transport.is_secure(),
                     csp_script_hash.as_deref(),
+                    csp_office_origin.as_deref(),
                 ));
             }
 
@@ -320,6 +341,7 @@ where
                     &request_id,
                     transport.is_secure(),
                     csp_script_hash.as_deref(),
+                    csp_office_origin.as_deref(),
                 ));
             }
 
@@ -375,6 +397,7 @@ where
                             &request_id,
                             transport.is_secure(),
                             csp_script_hash.as_deref(),
+                            csp_office_origin.as_deref(),
                         ));
                     }
                 },
@@ -395,6 +418,7 @@ where
                         &request_id,
                         transport.is_secure(),
                         csp_script_hash.as_deref(),
+                        csp_office_origin.as_deref(),
                     ));
                 }
             };
@@ -441,6 +465,7 @@ where
                 &request_id,
                 transport.is_secure(),
                 csp_script_hash.as_deref(),
+                csp_office_origin.as_deref(),
             ))
         })
     }
@@ -504,13 +529,19 @@ fn finish_response(
     request_id: &RequestId,
     secure: bool,
     csp_script_hash: Option<&str>,
+    csp_office_origin: Option<&str>,
 ) -> AxumResponse {
     let request_id = HeaderValue::from_str(request_id.as_str())
         .expect("validated request IDs are valid header values");
     response
         .headers_mut()
         .insert(HeaderName::from_static("x-request-id"), request_id);
-    add_security_headers(response.headers_mut(), secure, csp_script_hash);
+    add_security_headers(
+        response.headers_mut(),
+        secure,
+        csp_script_hash,
+        csp_office_origin,
+    );
     response
 }
 

@@ -189,7 +189,10 @@ editor's `onRequestHistory` events).
   chat files, shown only when the integration is on. Read-only access opens view mode.
 - CSP: add the Document Server origin to `frame-src` (and `script-src` for `api.js`) in
   `crates/platform/src/http/security.rs:296`, **only when the integration is on**. The policy is
-  built per request, so derive it from the setting.
+  built per request, so derive it from the setting. As built (OO-18): the HTTP layer takes a
+  shared `orbit_platform::CspOfficeOrigin` handle (`HttpPlatformLayer::with_csp_office_origin`).
+  OO-7 creates one, gives it to the layer in `router.rs`, and calls `set("https://host[:port]")`
+  or `clear()` when the settings load or change. Until then the policy is unchanged.
 - Run `just api` to regenerate `packages/api` after the server routes land.
 
 ## 6. Mobile

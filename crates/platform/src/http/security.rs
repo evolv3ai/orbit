@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr};
+use std::sync::{Arc, RwLock};
 
 use axum::http::header::{
     CONTENT_SECURITY_POLICY, HeaderName, HeaderValue, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
@@ -95,6 +96,11 @@ impl OriginPolicy {
             // Machine-to-machine: the secret in the path is the credential, and no cookie is read.
             return true;
         }
+        if is_office_callback(method, uri.path()) {
+            // The office Document Server saving a file: no Origin, no cookie. The handler checks
+            // the signed token of the request.
+            return true;
+        }
         if uri.path().starts_with("/api/v1/mail/inbound/") {
             // webhooks from servers: no Origin, and the handler checks their signature
             return true;
@@ -133,6 +139,23 @@ impl OriginPolicy {
                 }
             })
     }
+}
+
+/// `POST /api/v1/office/{kind}/{file_id}/callback`, and no other office route.
+fn is_office_callback(method: &Method, path: &str) -> bool {
+    *method == Method::POST
+        && path
+            .strip_prefix("/api/v1/office/")
+            .and_then(|rest| rest.strip_suffix("/callback"))
+            .and_then(|file| file.split_once('/'))
+            .is_some_and(|(kind, file_id)| {
+                !kind.is_empty()
+                    && kind
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                    && !file_id.is_empty()
+                    && !file_id.contains('/')
+            })
 }
 
 /// The sign-in POSTs a native app sends before it has a session: a password, a second factor, or a provider flow
@@ -280,20 +303,74 @@ fn forwarded_transport(headers: &HeaderMap) -> Result<Option<RequestTransport>, 
     Ok(transport)
 }
 
+/// The origin of the office Document Server (ONLYOFFICE), for the content security policy. While
+/// one is set, pages may load the editor's script from it and frame the editor. It is a shared
+/// handle: the server sets or clears it when the integration's settings change, and every
+/// response reads it, so a change needs no restart.
+#[derive(Clone, Debug, Default)]
+pub struct CspOfficeOrigin(Arc<RwLock<Option<String>>>);
+
+/// The value is not `http(s)://host[:port]`, so it cannot be a source of the policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("a content security policy source must be an http or https origin without a path")]
+pub struct InvalidCspOrigin;
+
+impl CspOfficeOrigin {
+    /// Turns the integration on for the policy. `origin` is `scheme://host[:port]`.
+    pub fn set(&self, origin: &str) -> Result<(), InvalidCspOrigin> {
+        // The host check keeps every character that could end the source or the directive out
+        // of the header (a space, `;`, `,`, a quote, `*`).
+        let host_and_port = origin
+            .strip_prefix("https://")
+            .or_else(|| origin.strip_prefix("http://"))
+            .ok_or(InvalidCspOrigin)?;
+        if !is_valid_http_origin(origin)
+            || !host_and_port
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b':'))
+        {
+            return Err(InvalidCspOrigin);
+        }
+        *self.0.write().unwrap_or_else(|error| error.into_inner()) = Some(origin.to_owned());
+        Ok(())
+    }
+
+    /// Turns the integration off for the policy.
+    pub fn clear(&self) {
+        *self.0.write().unwrap_or_else(|error| error.into_inner()) = None;
+    }
+
+    pub(crate) fn get(&self) -> Option<String> {
+        self.0
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+}
+
 pub(crate) fn add_security_headers(
     headers: &mut HeaderMap,
     secure: bool,
     csp_script_hash: Option<&str>,
+    csp_office_origin: Option<&str>,
 ) {
+    // With the office integration on, the Document Server serves the editor's script (`api.js`)
+    // and the editor itself, which runs in a frame. Without it, the policy has no extra source.
+    let office_source = csp_office_origin
+        .map(|origin| format!(" {origin}"))
+        .unwrap_or_default();
+    let office_frame = csp_office_origin
+        .map(|origin| format!("{origin} "))
+        .unwrap_or_default();
     let script_source = csp_script_hash
-        .map(|hash| format!("script-src 'self' '{hash}'; "))
-        .unwrap_or_else(|| "script-src 'self'; ".to_owned());
+        .map(|hash| format!("script-src 'self' '{hash}'{office_source}; "))
+        .unwrap_or_else(|| format!("script-src 'self'{office_source}; "));
     // The style-src hash is the empty string's: it allows only an empty `<style>`, which BlockNote's placeholder
     // plugin creates and then fills through the CSSOM (`insertRule`), which CSP does not restrict.
     // `frame-src` `blob:` is the PDF preview (the file URL itself cannot be framed). Vimeo joins YouTube.
     // `media-src` `https:` lets a document play an audio or video file the page links to.
     let policy = format!(
-        "default-src 'self'; {script_source}style-src 'self' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https:; frame-src blob: https://www.youtube-nocookie.com https://player.vimeo.com; media-src 'self' https:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self' https://github.com"
+        "default-src 'self'; {script_source}style-src 'self' 'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='; style-src-attr 'unsafe-inline'; img-src 'self' data: blob: https:; frame-src {office_frame}blob: https://www.youtube-nocookie.com https://player.vimeo.com; media-src 'self' https:; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self' https://github.com"
     );
     // A handler that sets its own policy keeps it (the sandboxed mail view document).
     let handler_policy = headers.contains_key(CONTENT_SECURITY_POLICY);
@@ -361,7 +438,7 @@ mod tests {
     #[test]
     fn responses_refuse_framing_and_isolate_the_opener() {
         let mut headers = HeaderMap::new();
-        add_security_headers(&mut headers, true, None);
+        add_security_headers(&mut headers, true, None, None);
         assert_eq!(headers["x-frame-options"], "DENY");
         assert_eq!(headers["cross-origin-opener-policy"], "same-origin");
     }
