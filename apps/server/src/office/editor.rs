@@ -26,6 +26,7 @@ const MAX_BACK_BYTES: usize = 2048;
 
 pub(super) fn editor_router() -> Router<OfficeState> {
     Router::new()
+        .route("/api/v1/office/status", get(get_office_status))
         .route(
             "/api/v1/office/{kind}/{file_id}/config",
             get(get_office_editor_config),
@@ -38,6 +39,42 @@ pub(super) fn editor_router() -> Router<OfficeState> {
             "/api/v1/office/{kind}/{file_id}/callback",
             post(super::callback::office_callback),
         )
+}
+
+/// Whether this Orbit opens office files in the editor.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct OfficeStatusView {
+    /// A Document Server is set and office editing is on. The apps then offer "Open in editor"
+    /// on office files.
+    enabled: bool,
+}
+
+/// Whether office editing is on, for everyone who is signed in. It says nothing else about the
+/// Document Server.
+#[utoipa::path(get, path = "/api/v1/office/status", responses((status = 200, body = OfficeStatusView)))]
+pub(crate) async fn get_office_status(
+    State(state): State<OfficeState>,
+    headers: HeaderMap,
+    request_id: Option<Extension<RequestId>>,
+) -> Result<Json<OfficeStatusView>, ApiError> {
+    let instance = "/api/v1/office/status";
+    let request_id = request_id.as_ref();
+    authenticate_session(
+        &state.identity,
+        state.cookie_mode,
+        &headers,
+        instance,
+        request_id,
+    )
+    .await?;
+    let enabled = state
+        .repository()
+        .get()
+        .await
+        .map_err(|error| internal(instance, request_id).cause(error))?
+        .is_some_and(|settings| settings.enabled)
+        && state.app_key.is_some();
+    Ok(Json(OfficeStatusView { enabled }))
 }
 
 /// What the editor page needs to open one file.

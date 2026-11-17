@@ -37,11 +37,14 @@ export function Attachments({
   attachments,
   hasTextContent = true,
   onRemove,
+  editorHref,
 }: {
   attachments: Attachment[]
   hasTextContent?: boolean
   /** When given, every attachment gets a remove button. */
   onRemove?: (attachmentId: string) => void
+  /** Gives the address of "Open in editor" for a file, or `null`. Without it, no file has the action. */
+  editorHref?: (fileName: string, url: string) => string | null
 }) {
   const [viewerImage, setViewerImage] = useState<Attachment | null>(null)
   const [viewerPdf, setViewerPdf] = useState<Attachment | null>(null)
@@ -126,6 +129,7 @@ export function Attachments({
               {onRemove ? (
                 <RemoveAttachmentButton attachment={att} onRemove={onRemove} />
               ) : null}
+              <EditorLink href={att.deleted ? null : editorHref?.(att.fileName, att.url) ?? null} />
             </span>
           ))}
         </div>
@@ -138,6 +142,16 @@ export function Attachments({
         </Suspense>
       ) : null}
     </div>
+  )
+}
+
+/** "Open in editor" under a file card: the office editor, in a new tab. */
+function EditorLink({ href }: { href: string | null }) {
+  if (!href) return null
+  return (
+    <a data-slot="attachment-editor-link" href={href} target="_blank" rel="noopener" className="mt-1 inline-block px-1 text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">
+      Open in editor
+    </a>
   )
 }
 

@@ -1094,3 +1094,34 @@ fn hex_sha256(bytes: &[u8]) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
+
+#[tokio::test]
+async fn everyone_signed_in_learns_whether_office_editing_is_on() {
+    let fixture = Fixture::without_document_server().await;
+    let status = |cookie: String| {
+        let app = fixture.app.clone();
+        async move {
+            let mut request = Request::builder().uri("/api/v1/office/status");
+            if !cookie.is_empty() {
+                request = request.header(header::COOKIE, cookie);
+            }
+            send(&app, request.body(Body::empty()).unwrap()).await
+        }
+    };
+    let guest = fixture.person("Guest", Some("guest")).await;
+
+    assert_eq!(status(String::new()).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        status(guest.clone()).await,
+        (StatusCode::OK, json!({"enabled": false}))
+    );
+    fixture.save_settings(false).await;
+    assert_eq!(status(guest.clone()).await.1, json!({"enabled": false}));
+    fixture.save_settings(true).await;
+    // Nothing about the Document Server itself.
+    assert_eq!(status(guest).await.1, json!({"enabled": true}));
+    assert_eq!(
+        status(fixture.owner_cookie.clone()).await.1,
+        json!({"enabled": true})
+    );
+}

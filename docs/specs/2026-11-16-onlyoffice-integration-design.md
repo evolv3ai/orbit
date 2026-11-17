@@ -291,6 +291,24 @@ As built (OO-11, `apps/web/src/features/office/`):
 - No language is sent: the web app has no language setting, so the editor uses its default.
 - Not yet run in a browser against a Document Server.
 
+As built (OO-12):
+
+- `GET /api/v1/office/status` answers `{ "enabled" }` to everyone who is signed in. The web app
+  asks once per five minutes (`useOfficeEnabled`).
+- "Open in editor" opens `/office/...` in a new tab. It shows on files the editor opens (the
+  formats of section 4.3, by the extension of the name) in two places:
+  - file blocks in the editors of Docs pages, task descriptions and comments
+    (`packages/editor/src/FilePreview.tsx`). The web app provides `OfficeLinkContext`
+    (`packages/editor/src/officeLink.ts`) around the app shell; without a provider the block is
+    as upstream has it.
+  - the file cards under a task and under a comment (`Attachments`, prop `editorHref`).
+- The file and its kind come from the download address of the file
+  (`features/office/officeFiles.ts`).
+- **Not built: chat files** (the server has no `chat_file` kind, see 4.3) and mail attachments.
+- The mobile app does not provide the context, so its file blocks are unchanged (section 6).
+- The link in file blocks was tested through its helper functions and the file cards; the block
+  itself was not rendered in a test or a browser.
+
 ## 6. Mobile
 
 Phase 1 (fork): mobile keeps downloading the file (OO-4). **Upstreaming requires a mobile port**

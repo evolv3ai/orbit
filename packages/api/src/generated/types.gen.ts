@@ -5024,6 +5024,17 @@ export type OfficeSettingsView = {
 };
 
 /**
+ * Whether this Orbit opens office files in the editor.
+ */
+export type OfficeStatusView = {
+    /**
+     * A Document Server is set and office editing is on. The apps then offer "Open in editor"
+     * on office files.
+     */
+    enabled: boolean;
+};
+
+/**
  * An Orbit import. Never contains the token.
  */
 export type OrbitImport = {
@@ -18646,6 +18657,54 @@ export type PutNotificationPreferencesResponses = {
 };
 
 export type PutNotificationPreferencesResponse = PutNotificationPreferencesResponses[keyof PutNotificationPreferencesResponses];
+
+export type GetOfficeStatusData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/office/status';
+};
+
+export type GetOfficeStatusErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * contract_mismatch
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type GetOfficeStatusError = GetOfficeStatusErrors[keyof GetOfficeStatusErrors];
+
+export type GetOfficeStatusResponses = {
+    200: OfficeStatusView;
+};
+
+export type GetOfficeStatusResponse = GetOfficeStatusResponses[keyof GetOfficeStatusResponses];
 
 export type GetOfficeEditorConfigData = {
     body?: never;

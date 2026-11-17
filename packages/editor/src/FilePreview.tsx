@@ -1,6 +1,7 @@
 import { FileBlockWrapper } from '@blocknote/react'
 import type { ReactCustomBlockRenderProps } from '@blocknote/react'
-import { useEffect, useState } from 'react'
+import { useContext, useEffect, useState } from 'react'
+import { OfficeLinkContext } from './officeLink'
 import { filePreviewKind, isPdfBytes, showsFilePreview, type FilePreviewKind } from './mediaFiles'
 
 /** Text shown in the page. A longer file keeps the file row instead of a cut-off preview. */
@@ -31,10 +32,34 @@ export function FilePreview(props: FileBlockProps) {
   const { name, url } = props.block.props
   const kind = filePreviewKind(name, url)
   const show = showsFilePreview(kind, url)
+  // Set by the app while office editing is on, for the files the office editor opens.
+  const officeHref = useContext(OfficeLinkContext)?.(name, url) ?? null
   return (
-    <FileBlockWrapper {...props} style={show ? { width: '100%' } : undefined}>
-      {show ? <Preview kind={kind} name={name} url={url} /> : undefined}
+    <FileBlockWrapper {...props} style={show || officeHref ? { width: '100%' } : undefined}>
+      {show ? <Preview kind={kind} name={name} url={url} officeHref={officeHref} /> : officeHref ? <OfficeFile name={name} url={url} officeHref={officeHref} /> : undefined}
     </FileBlockWrapper>
+  )
+}
+
+/** "Open in editor": the office editor, in a new tab, so the page stays as it is. */
+function OfficeLink({ href }: { href: string }) {
+  return (
+    <a data-slot="file-office-link" href={href} target="_blank" rel="noopener" className="shrink-0 text-sm font-medium underline underline-offset-4">
+      Open in editor
+    </a>
+  )
+}
+
+/** An office file without a preview: its name, which downloads it, and "Open in editor". */
+function OfficeFile({ name, url, officeHref }: FileFields & { officeHref: string }) {
+  const keep = (event: { stopPropagation: () => void }) => event.stopPropagation()
+  return (
+    <div data-slot="file-office" className="flex w-full min-w-0 items-center gap-3" style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }} onMouseDown={keep}>
+      <a href={url} download={name || undefined} className="min-w-0 flex-1 truncate text-sm">
+        {name || url}
+      </a>
+      <OfficeLink href={officeHref} />
+    </div>
   )
 }
 
@@ -52,12 +77,17 @@ export function FileExternalHtml({ block }: { block: { props: FileFields & { cap
   )
 }
 
-function Preview({ kind, name, url }: { kind: FilePreviewKind } & FileFields) {
+function Preview({ kind, name, url, officeHref }: { kind: FilePreviewKind; officeHref: string | null } & FileFields) {
   // The block is one node. A click that reaches it selects the block and the control never sees it.
   const keep = (event: { stopPropagation: () => void }) => event.stopPropagation()
   return (
     <div data-slot="file-preview" data-kind={kind} className="flex w-full min-w-0 flex-col gap-2" style={{ width: '100%' }} onMouseDown={keep}>
-      {name ? <div className="truncate text-sm">{name}</div> : null}
+      {name || officeHref ? (
+        <div className="flex min-w-0 items-center gap-3" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="min-w-0 flex-1 truncate text-sm">{name}</div>
+          {officeHref ? <OfficeLink href={officeHref} /> : null}
+        </div>
+      ) : null}
       {kind === 'video' ? <Video url={url} /> : null}
       {kind === 'audio' ? <Audio url={url} /> : null}
       {kind === 'pdf' ? <PdfPreview name={name} url={url} /> : null}

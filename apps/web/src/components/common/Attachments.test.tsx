@@ -70,3 +70,22 @@ test('a deleted file says so and offers no image or download', () => {
   expect(view.queryAllByRole('button', { name: 'Open image diagram.png' })).toHaveLength(0)
   expect(view.container.querySelectorAll('a')).toHaveLength(0)
 })
+
+test('"Open in editor" shows on the files the caller gives an address for', () => {
+  const files: Attachment[] = [
+    { id: 'a', fileName: 'report.docx', mimeType: 'application/octet-stream', fileSize: 10, url: '/files/a' },
+    { id: 'b', fileName: 'notes.txt', mimeType: 'text/plain', fileSize: 10, url: '/files/b' },
+    { id: 'c', fileName: 'gone.docx', mimeType: 'application/octet-stream', fileSize: 10, url: '/files/c', deleted: true },
+  ]
+  const editorHref = (name: string, url: string) => (name.endsWith('.docx') ? `/office${url}` : null)
+
+  const view = render(<Attachments attachments={files} editorHref={editorHref} />)
+  const links = view.getAllByRole('link', { name: 'Open in editor' })
+  // Not the text file, and not the file an admin deleted.
+  expect(links.map((link) => link.getAttribute('href'))).toEqual(['/office/files/a'])
+  expect(links[0].getAttribute('target')).toBe('_blank')
+  view.unmount()
+
+  // Office editing is off: the caller passes nothing.
+  expect(render(<Attachments attachments={files} />).queryByRole('link', { name: 'Open in editor' })).toBeNull()
+})

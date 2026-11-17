@@ -50,6 +50,7 @@ import { SubIssuesSection } from './TaskSubIssues'
 import { useWorkspace } from '@/features/workspaces/workspaceContext'
 import { useWorkspaceReadOnly } from '@/features/workspaces/billing'
 import { Attachments } from '@/components/common/Attachments'
+import { useOfficeEditorHref } from '@/features/office/api'
 import { ActivityFeed } from './ActivityFeed'
 import { TaskCommentComposer } from './TaskCommentComposer'
 import { LabelPicker, LabelPill } from './TaskLabels'
@@ -74,6 +75,7 @@ export function TaskDetail({ task, project, state, onClose, onOpenTask, onOpenPr
   const { workspace } = useWorkspace()
   const updateTask = useUpdateTask(workspace.id)
   const deleteAttachment = useDeleteTaskAttachment(workspace.id, task?.id ?? '')
+  const officeHref = useOfficeEditorHref()
   const createComment = useCreateTaskComment(workspace.id, task?.id ?? '')
   const deleteTask = useDeleteTask(workspace.id)
   const githubLinks = useTaskGithubLinks(workspace.id, task?.id)
@@ -213,7 +215,7 @@ export function TaskDetail({ task, project, state, onClose, onOpenTask, onOpenPr
             {/* files attached before rich text; new files go into the description */}
             {task.attachments.length > 0 ? (
               <div className="mt-2 max-w-[520px]">
-                <Attachments attachments={task.attachments} onRemove={(id) => deleteAttachment.mutate(id)} />
+                <Attachments attachments={task.attachments} onRemove={(id) => deleteAttachment.mutate(id)} editorHref={officeHref} />
               </div>
             ) : null}
             <div className="mt-1.5">

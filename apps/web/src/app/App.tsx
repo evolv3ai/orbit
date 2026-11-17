@@ -23,6 +23,7 @@ import { AdminBackupsPage } from '@/features/admin/pages/AdminBackupsPage'
 import { AdminEmailPage } from '@/features/admin/pages/AdminEmailPage'
 import { AdminOfficePage } from '@/features/admin/pages/AdminOfficePage'
 import { OfficeEditorPage } from '@/features/office/pages/OfficeEditorPage'
+import { OfficeLinks } from '@/features/office/OfficeLinks'
 import { AdminJobsPage } from '@/features/admin/pages/AdminJobsPage'
 import { AdminLimitsPage } from '@/features/admin/pages/AdminLimitsPage'
 import { AdminStoragePage } from '@/features/admin/pages/AdminStoragePage'
@@ -113,7 +114,7 @@ export default function App() {
           {/* full height, outside the shell: the office editor has its own chrome */}
           <Route path="office/:kind/:fileId" element={<OfficeEditorPage />} />
           <Route element={<WorkspaceProvider><Outlet /></WorkspaceProvider>}>
-            <Route element={<AppShell />}>
+            <Route element={<OfficeLinks><AppShell /></OfficeLinks>}>
               <Route element={<GuestWorkspaceGate />}>
                 <Route index element={<HomePage />} />
                 <Route path="tasks" element={<TasksPage />} />
