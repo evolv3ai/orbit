@@ -28,6 +28,14 @@ export function officeFileOfUrl(url: string): { kind: 'attachment' | 'page_file'
   return attachment ? { kind: 'attachment', id: attachment[1] } : null
 }
 
+/**
+ * The language for the editor: the tag of the browser (`navigator.language`), when the server accepts it
+ * (2 to 12 letters, digits and `-`). Otherwise none, and the editor opens in its own language.
+ */
+export function editorLanguage(tag: string | undefined) {
+  return tag && /^[A-Za-z0-9-]{2,12}$/.test(tag) ? tag : undefined
+}
+
 /** The editor page of a file. `back`: the page of Orbit it is opened from. */
 export function officeEditorPath(kind: string, id: string, back: string) {
   return `/office/${kind}/${id}?back=${encodeURIComponent(back)}`

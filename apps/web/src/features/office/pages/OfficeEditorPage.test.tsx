@@ -76,6 +76,9 @@ test('loads the Document Server script and mounts the editor with the signed con
   expect(asked[0].pathname).toBe(`/api/v1/office/attachment/${FILE}/config`)
   expect(asked[0].searchParams.get('back')).toBe('/tasks/42')
   expect(['light', 'dark']).toContain(asked[0].searchParams.get('theme') ?? '')
+  // The editor opens in the language of the browser.
+  expect(navigator.language).toBeTruthy()
+  expect(asked[0].searchParams.get('lang')).toBe(navigator.language)
   await waitFor(() => expect(mounted).toHaveLength(1))
   expect(document.getElementById(mounted[0].id)).toBeTruthy()
   // The signed values go to the editor as the server gave them.

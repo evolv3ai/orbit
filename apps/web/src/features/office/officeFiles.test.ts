@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isOfficeFileName, officeEditorHref, officeFileOfUrl } from './officeFiles'
+import { isOfficeFileName, officeEditorHref, officeFileOfUrl, editorLanguage } from './officeFiles'
 
 const WORKSPACE = '01900000-0000-7000-8000-000000000001'
 const PARENT = '01900000-0000-7000-8000-000000000002'
@@ -37,4 +37,16 @@ test('the editor address carries the page it is opened from', () => {
   expect(officeEditorHref('budget.xlsx', PAGE_FILE)).toBe(`/office/page_file/${FILE}?back=%2Ftasks%2F42%3Fview%3Dboard`)
   expect(officeEditorHref('photo.png', TASK_FILE)).toBeNull()
   expect(officeEditorHref('report.docx', `/api/v1/workspaces/${WORKSPACE}/chat/files/${FILE}`)).toBeNull()
+})
+
+test('the editor gets the language of the browser, when it is a plain language tag', () => {
+  expect(editorLanguage('de')).toBe('de')
+  expect(editorLanguage('pt-BR')).toBe('pt-BR')
+  expect(editorLanguage('zh-Hant-TW')).toBe('zh-Hant-TW')
+  // What the server would refuse is not sent: the editor then opens in its own language.
+  expect(editorLanguage('')).toBeUndefined()
+  expect(editorLanguage('x')).toBeUndefined()
+  expect(editorLanguage('en_US')).toBeUndefined()
+  expect(editorLanguage('en-US-x-a-very-long-tag')).toBeUndefined()
+  expect(editorLanguage(undefined)).toBeUndefined()
 })

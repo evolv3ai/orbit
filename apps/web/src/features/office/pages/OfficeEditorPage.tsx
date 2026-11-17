@@ -10,6 +10,7 @@ import { queryKeys } from '@/api/queryKeys'
 import { EmptyState } from '@/components/common/EmptyState'
 import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { editorLanguage } from '@/features/office/officeFiles'
 import { useTheme } from '@/lib/themeContext'
 import { loadDocsApi } from '@/features/office/documentServer'
 
@@ -49,7 +50,7 @@ export function OfficeEditorPage() {
       client: apiClient,
       throwOnError: true,
       path: { kind, file_id: fileId },
-      query: { theme, back: back === '/' ? undefined : back },
+      query: { theme, lang: editorLanguage(navigator.language), back: back === '/' ? undefined : back },
     })).data,
     // A config opens one version of the file for five minutes: never reuse an old one.
     staleTime: 0,
