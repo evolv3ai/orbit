@@ -244,7 +244,7 @@ Orbit uses these rules:
 
 ## Office editing (ONLYOFFICE)
 
-This is a feature of the `evolv3ai/orbit` fork. Orbit can open Word, Excel, PowerPoint and PDF files in an [ONLYOFFICE Docs](https://www.onlyoffice.com/docs) Document Server that you run. The files stay in Orbit. People open a file with **Open in editor** on files of tasks, comments and Docs pages.
+This is a feature of the `evolv3ai/orbit` fork. Orbit can open Word, Excel, PowerPoint and PDF files in an [ONLYOFFICE Docs](https://www.onlyoffice.com/docs) Document Server that you run. The files stay in Orbit. People open a file with **Open in editor** on files of tasks, comments and Docs pages. [Office editing (ONLYOFFICE)](onlyoffice.md) is the setup guide: how to run the Document Server, the network paths and common problems.
 
 An instance admin saves the Document Server in **Admin → Office editing**, or the `ORBIT_ONLYOFFICE_*` variables set it (then Admin shows it read-only):
 

@@ -312,8 +312,7 @@ As built (OO-12):
 End-to-end run (OO-14, 2026-11-16), by hand, on one workstation:
 
 - Setup: `onlyoffice/documentserver:latest` (10.0.0) in Docker on `http://localhost:8085` with
-  `JWT_ENABLED=true`, `JWT_SECRET`, `ALLOW_PRIVATE_IP_ADDRESS=true` and
-  `ALLOW_META_IP_ADDRESS=true`. Orbit on `http://localhost:8091` with SQLite and local files,
+  `JWT_ENABLED=true` and `JWT_SECRET`. Orbit on `http://localhost:8091` with SQLite and local files,
   `ORBIT_ONLYOFFICE_URL`, `ORBIT_ONLYOFFICE_JWT_SECRET` and
   `ORBIT_ONLYOFFICE_ORBIT_URL=http://host.docker.internal:8091`.
 - Passed: the connection test; the Document Server downloads the file; `docx`, `xlsx` and `pptx`
@@ -321,8 +320,12 @@ End-to-end run (OO-14, 2026-11-16), by hand, on one workstation:
   comes back to Orbit about 10 seconds after the editor closes; the earlier bytes are kept as a
   version; `office.file_saved` is audited; the next open has a new key; "Open in editor" shows on
   the file card and on the file block; the message when the Document Server is stopped.
-- The Document Server refuses to call an Orbit on a private address unless it runs with
-  `ALLOW_PRIVATE_IP_ADDRESS=true`. The admin guide must say so.
+- The first run set `ALLOW_PRIVATE_IP_ADDRESS=true` and `ALLOW_META_IP_ADDRESS=true`. A second
+  container without them also opened a file from Orbit on `host.docker.internal`, so 10.0.0 does
+  not need them here. Saving without them was not run.
+- With another `JWT_SECRET` than Orbit has, the editor says "The document security token is not
+  correctly formed." and the Document Server logs `checkJwt error … invalid signature`.
+- The admin guide is `docs/onlyoffice.md` (OO-13).
 - Not run: two people in one file, a read-only member in the browser, the light theme, S3
   storage, Postgres, HTTPS behind a proxy, a file near the size limit.
 
