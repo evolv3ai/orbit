@@ -276,6 +276,21 @@ editor's `onRequestHistory` events).
   or `clear()` when the settings load or change. Until then the policy is unchanged.
 - Run `just api` to regenerate `packages/api` after the server routes land.
 
+As built (OO-11, `apps/web/src/features/office/`):
+
+- `/office/:kind/:fileId?back=/path` is inside the sign-in gate and outside the app shell, so the
+  editor has the whole window. `back` is the page the file was opened from; "Back to Orbit" and
+  the editor's "Open file location" lead there, or home.
+- The page asks for the config with the current theme, loads `api.js` (`documentServer.ts`, once
+  per address), and mounts `DocsAPI.DocEditor` with the config as the server gave it, plus
+  `width`, `height` and `type: "desktop"`. Leaving the page destroys the editor.
+- It asks for a new config on every visit and after "Try again": a config is for one version of
+  the file and its download address lasts five minutes.
+- Messages: office editing off, not an office file, file not found (no retry); the Document
+  Server could not be reached, and other failures (with "Try again").
+- No language is sent: the web app has no language setting, so the editor uses its default.
+- Not yet run in a browser against a Document Server.
+
 ## 6. Mobile
 
 Phase 1 (fork): mobile keeps downloading the file (OO-4). **Upstreaming requires a mobile port**

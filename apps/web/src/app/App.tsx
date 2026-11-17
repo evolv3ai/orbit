@@ -22,6 +22,7 @@ import { AdminAuditPage } from '@/features/admin/pages/AdminAuditPage'
 import { AdminBackupsPage } from '@/features/admin/pages/AdminBackupsPage'
 import { AdminEmailPage } from '@/features/admin/pages/AdminEmailPage'
 import { AdminOfficePage } from '@/features/admin/pages/AdminOfficePage'
+import { OfficeEditorPage } from '@/features/office/pages/OfficeEditorPage'
 import { AdminJobsPage } from '@/features/admin/pages/AdminJobsPage'
 import { AdminLimitsPage } from '@/features/admin/pages/AdminLimitsPage'
 import { AdminStoragePage } from '@/features/admin/pages/AdminStoragePage'
@@ -109,6 +110,8 @@ export default function App() {
         <Route path="confirm-email" element={<ConfirmEmailPage />} />
         <Route element={<AuthGate />}>
           <Route path="onboarding" element={<OnboardingPage />} />
+          {/* full height, outside the shell: the office editor has its own chrome */}
+          <Route path="office/:kind/:fileId" element={<OfficeEditorPage />} />
           <Route element={<WorkspaceProvider><Outlet /></WorkspaceProvider>}>
             <Route element={<AppShell />}>
               <Route element={<GuestWorkspaceGate />}>
