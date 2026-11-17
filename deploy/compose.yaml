@@ -7,7 +7,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ['/tmp:size=64m,mode=1777']
     stop_grace_period: 40s
     environment:
       ORBIT_ENV: production

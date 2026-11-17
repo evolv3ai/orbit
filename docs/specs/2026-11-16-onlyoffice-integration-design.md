@@ -364,9 +364,10 @@ As built (OO-6):
   office origin, and from the Document Server container both names resolve to Caddy.
 - Not run: opening and saving a file through this stack. That needs certificates both servers
   trust, so a real DNS name. Whether `ALLOW_PRIVATE_IP_ADDRESS` is needed was not tested either.
-- Found, not changed: `tmpfs: [/tmp:size=64m,mode=1777]` in `deploy/compose.yaml` (also upstream)
-  is read as two entries by Docker Compose 5.7 on Docker Desktop, and the container is refused
-  (`invalid mount path: 'mode=1777'`). Quoting the entry fixes it. Not checked on Linux.
+- Fixed in the fork: `tmpfs: [/tmp:size=64m,mode=1777]` in `deploy/compose.yaml` (as upstream has
+  it) is read as two entries by Docker Compose 5.7 on Docker Desktop, and the container is refused
+  (`invalid mount path: 'mode=1777'`). The entry is now quoted. This is one changed line in an
+  upstream file. The unquoted form was not checked on Linux.
 
 ## 8. Tests (OO-14)
 
