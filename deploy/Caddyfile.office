@@ -1,0 +1,7 @@
+# Used by compose.office.yaml in place of Caddyfile: Orbit as before, plus the Document Server.
+import /etc/caddy/Caddyfile.orbit
+
+{$ORBIT_OFFICE_DOMAIN} {
+    # Caddy passes WebSocket upgrades and sets the X-Forwarded-* headers the Document Server needs.
+    reverse_proxy documentserver:80
+}

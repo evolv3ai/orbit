@@ -345,6 +345,29 @@ Phase 1 (fork): mobile keeps downloading the file (OO-4). **Upstreaming requires
   (for example `office.appster.net`) with `JWT_ENABLED=true` and `JWT_SECRET` from Infisical.
   The image switch and server changes are the owner's call.
 
+As built (OO-6):
+
+- The service is in an overlay, `deploy/compose.office.yaml`, with `deploy/Caddyfile.office`, not in
+  `deploy/compose.yaml`. Reasons: Orbit and Caddy need settings of their own when it is on, which a
+  Compose profile cannot switch; the overlay can require its variables; and the two upstream files
+  stay unchanged (section 9). `Caddyfile.office` imports the upstream `Caddyfile`.
+- The Document Server has its own host name (`ORBIT_OFFICE_DOMAIN`), no published port, the pinned
+  image `onlyoffice/documentserver:10.0.0` (`ONLYOFFICE_IMAGE`), and volumes for
+  `/var/www/onlyoffice/Data`, `/var/log/onlyoffice`, `/var/lib/onlyoffice` and `/var/lib/postgresql`.
+- Caddy has both public host names as aliases on the Docker network. Orbit and the Document Server
+  call each other on the public names and reach Caddy directly, so neither optional URL is set.
+  Because that address is private, the service sets `ALLOW_PRIVATE_IP_ADDRESS=true` (the image's
+  default is `false`).
+- Checked on 2026-11-16 with the fork image and Caddy's internal certificates on two `.internal`
+  names: the merged file is valid, the three containers become healthy, `/healthcheck` and `api.js`
+  answer through Caddy, a WebSocket upgrade on `/doc/.../c/` gets 101, Orbit's policy names the
+  office origin, and from the Document Server container both names resolve to Caddy.
+- Not run: opening and saving a file through this stack. That needs certificates both servers
+  trust, so a real DNS name. Whether `ALLOW_PRIVATE_IP_ADDRESS` is needed was not tested either.
+- Found, not changed: `tmpfs: [/tmp:size=64m,mode=1777]` in `deploy/compose.yaml` (also upstream)
+  is read as two entries by Docker Compose 5.7 on Docker Desktop, and the container is refused
+  (`invalid mount path: 'mode=1777'`). Quoting the entry fixes it. Not checked on Linux.
+
 ## 8. Tests (OO-14)
 
 - Unit: office token (expiry, wrong file, wrong blob), JWT verify (bad secret, missing token),

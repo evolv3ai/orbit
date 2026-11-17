@@ -1,0 +1,45 @@
+# Optional: office editing with an ONLYOFFICE Document Server (docs/onlyoffice.md).
+# Use it on top of compose.yaml, with ORBIT_OFFICE_DOMAIN and ORBIT_ONLYOFFICE_JWT_SECRET in deploy/.env:
+#
+#   docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.office.yaml up -d
+#
+# Only a build of the evolv3ai/orbit fork knows the ORBIT_ONLYOFFICE_* variables.
+services:
+  orbit:
+    environment:
+      ORBIT_ONLYOFFICE_URL: https://${ORBIT_OFFICE_DOMAIN:?Set ORBIT_OFFICE_DOMAIN in deploy/.env}
+      ORBIT_ONLYOFFICE_JWT_SECRET: ${ORBIT_ONLYOFFICE_JWT_SECRET:?Set ORBIT_ONLYOFFICE_JWT_SECRET in deploy/.env}
+  documentserver:
+    image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:10.0.0}
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      JWT_ENABLED: 'true'
+      JWT_SECRET: ${ORBIT_ONLYOFFICE_JWT_SECRET:?Set ORBIT_ONLYOFFICE_JWT_SECRET in deploy/.env}
+      # The Document Server reaches Orbit through the proxy on the Docker network, a private address.
+      ALLOW_PRIVATE_IP_ADDRESS: 'true'
+    # No published port: only Caddy reaches it. The image has its own healthcheck.
+    volumes:
+      - documentserver-data:/var/www/onlyoffice/Data
+      - documentserver-logs:/var/log/onlyoffice
+      - documentserver-lib:/var/lib/onlyoffice
+      - documentserver-db:/var/lib/postgresql
+    networks: [backend]
+  proxy:
+    environment:
+      ORBIT_OFFICE_DOMAIN: ${ORBIT_OFFICE_DOMAIN:?Set ORBIT_OFFICE_DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile.orbit:ro
+      - ./Caddyfile.office:/etc/caddy/Caddyfile:ro
+    networks:
+      backend:
+        # Orbit and the Document Server call each other on their public names. Inside the network these
+        # names are Caddy, so the calls do not leave the host and still use the public certificates.
+        aliases:
+          - ${ORBIT_DOMAIN:?Set ORBIT_DOMAIN in deploy/.env}
+          - ${ORBIT_OFFICE_DOMAIN:?Set ORBIT_OFFICE_DOMAIN in deploy/.env}
+volumes:
+  documentserver-data:
+  documentserver-logs:
+  documentserver-lib:
+  documentserver-db:

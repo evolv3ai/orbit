@@ -28,6 +28,22 @@ This guide was checked with Document Server 10.0.0.
 
 In production, put the Document Server behind your reverse proxy on its own HTTPS host name, for example `https://office.example.com`. When Orbit is on HTTPS, the Document Server must be on HTTPS too: browsers do not load an HTTP editor into an HTTPS page. The proxy must pass WebSocket connections. The ONLYOFFICE documentation describes HTTPS and running behind a proxy.
 
+### With the Docker deployment of this repository
+
+`deploy/compose.office.yaml` adds a Document Server to the [Docker deployment](../deploy/README.md), behind the same Caddy, on a host name of its own. It also sets `ORBIT_ONLYOFFICE_URL` and `ORBIT_ONLYOFFICE_JWT_SECRET` for Orbit, so Admin shows the settings read-only.
+
+1. Point a second DNS name at the host, for example `office.example.com`.
+2. Add two lines to `deploy/.env`: `ORBIT_OFFICE_DOMAIN` (the name, without `https://`) and `ORBIT_ONLYOFFICE_JWT_SECRET` (`openssl rand -hex 32`).
+3. Start with both files. Use both in every later `docker compose` command too:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.office.yaml up -d
+```
+
+The Document Server has no published port, and Caddy gets its certificate. Inside the Docker network, the two host names point at Caddy, so Orbit and the Document Server reach each other without leaving the host and you set neither of the two optional addresses. The Document Server keeps its files, logs and database in four `documentserver-*` volumes. They hold only files that are open and its cache: your files are in Orbit, and Orbit's backups do not include these volumes.
+
+The file pins the Document Server version. Set `ONLYOFFICE_IMAGE` in `deploy/.env` to run another one. Without the second file, the deployment is as before.
+
 ## Network paths
 
 Three connections must work. Each one fails in its own way, so check them one at a time.
