@@ -461,7 +461,9 @@ As built (OO-6):
   migration that rebuilds `notifications`, add the kind, the column `office_file_name` and their
   checks to it before it runs anywhere, or it fails on an Orbit that has such a notification.
   The test `a_failed_save_marks_the_file_and_tells_the_person_who_edited_last` fails when the
-  kind is lost. Also changed for it: `repositories/tasks.rs` (the notification record) and the
+  kind is lost. Done once, for the merge of upstream v0.4.0: the fork changed the upstream migration
+  `20261118130637_chat_reports_and_blocks` (both copies; a comment in it says so), so its
+  checksum differs from upstream's. Keep the fork's copy in later merges. Also changed for it: `repositories/tasks.rs` (the notification record) and the
   inbox wording of the web and mobile apps.
 - Work on a `feat/onlyoffice` branch; rebase on `upstream/main` before each release.
 - If the integration proves itself, offer it upstream, which needs the mobile port.

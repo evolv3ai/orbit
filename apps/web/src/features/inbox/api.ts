@@ -129,9 +129,10 @@ const IMPORTS: Record<string, { name: string; page: string }> = {
 
 /**
  * Where a notification leads: the task, the page with the comment thread open, the page at the mention, the chat
- * message, the import, or the task or page of a file that the office editor could not save.
+ * message, the chat reports, the import, or the task or page of a file that the office editor could not save.
  */
 export function notificationTarget(notification: NotificationRecord): string | null {
+  if (notification.kind === 'chat_reported') return '/settings/reports'
   if (notification.kind === 'import_finished') {
     const source = IMPORTS[notification.import_source ?? '']
     return source && notification.import_id ? `${source.page}/${notification.import_id}` : null
@@ -172,6 +173,9 @@ export function notificationCopy(notification: NotificationRecord, pageTitle?: s
   }
   if (notification.kind === 'chat_mentioned') {
     return { title: `${actorName ?? 'Someone'} mentioned you in chat`, body: 'Open the conversation to see the message.' }
+  }
+  if (notification.kind === 'chat_reported') {
+    return { title: `${actorName ?? 'Someone'} reported a chat message`, body: 'Open the reports to see the message.' }
   }
   if (notification.kind === 'page_mentioned') {
     const page = pageTitle === undefined ? 'a page' : `“${pageTitle.trim() || 'Untitled'}”`
