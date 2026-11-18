@@ -32,6 +32,10 @@ pub(super) fn editor_router() -> Router<OfficeState> {
             get(get_office_editor_config),
         )
         .route(
+            "/api/v1/office/{kind}/{file_id}/key",
+            post(renew_office_document_key),
+        )
+        .route(
             "/api/v1/office/{kind}/{file_id}/download",
             get(download_office_file),
         )
@@ -188,6 +192,89 @@ pub(crate) async fn get_office_editor_config(
         document_server_url: settings.url,
         config,
     }))
+}
+
+/// A key that the editor refused.
+#[derive(Deserialize, ToSchema)]
+pub(crate) struct OfficeKeyRenewal {
+    /// The `document.key` of the config that the editor would not open.
+    outdated_key: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct OfficeKeyRenewalView {
+    /// The file has a new key. `false`: the reported key was not the one in use, so the next
+    /// config already has another key.
+    renewed: bool,
+}
+
+/// The editor page reports that the Document Server refused the key of a file as outdated: it has
+/// already seen a file saved under that key. That happens when a backup restore brings back the
+/// bytes a file had before an edit. Orbit gives the file a new key, the same for everyone; ask for
+/// the config again to open the file. Only people who may change the file get a new key: a new
+/// key while others edit under the old one would split them. A key that the file no longer has
+/// changes nothing, whoever reports it.
+#[utoipa::path(post, path = "/api/v1/office/{kind}/{file_id}/key", params(("kind" = String, Path, description = "`attachment` or `page_file`"), ("file_id" = String, Path)), request_body = OfficeKeyRenewal, responses((status = 200, body = OfficeKeyRenewalView)))]
+pub(crate) async fn renew_office_document_key(
+    State(state): State<OfficeState>,
+    Path((kind, file_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    request_id: Option<Extension<RequestId>>,
+    Json(body): Json<OfficeKeyRenewal>,
+) -> Result<Json<OfficeKeyRenewalView>, ApiError> {
+    let instance = format!("/api/v1/office/{kind}/{file_id}/key");
+    let request_id = request_id.as_ref();
+    let session = authenticate_session(
+        &state.identity,
+        state.cookie_mode,
+        &headers,
+        &instance,
+        request_id,
+    )
+    .await?;
+    let database = state.identity.database();
+    let (Some(kind), Ok(file_id)) = (OfficeFileKind::parse(&kind), file_id.parse::<Id>()) else {
+        return Err(not_found(&instance, request_id));
+    };
+    let file = files::find(database, kind, file_id)
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?
+        .filter(|file| !file.deleted)
+        .ok_or_else(|| not_found(&instance, request_id))?;
+    let access = files::access(database, &state.uploads, &session, &file)
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?
+        .ok_or_else(|| not_found(&instance, request_id))?;
+    // The file has another key by now: the next config opens it, whoever asks.
+    if body.outdated_key != file.document_key() {
+        return Ok(Json(OfficeKeyRenewalView { renewed: false }));
+    }
+    if access != OfficeAccess::Edit {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "office_file_read_only",
+            "Read-only file",
+            "Only people who can change this file can renew its editor key.",
+            &instance,
+            request_id,
+        ));
+    }
+    let now = database
+        .database_now()
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?;
+    let renewed = files::renew_key(database, &file, &body.outdated_key, now)
+        .await
+        .map_err(|error| internal(&instance, request_id).cause(error))?;
+    if renewed {
+        tracing::info!(
+            kind = file.kind.as_str(),
+            file_id = %file.id,
+            user_id = %session.user.id,
+            "the editor key of an office file was renewed"
+        );
+    }
+    Ok(Json(OfficeKeyRenewalView { renewed }))
 }
 
 #[derive(Deserialize)]

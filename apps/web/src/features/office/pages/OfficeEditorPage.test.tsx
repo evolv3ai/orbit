@@ -82,10 +82,70 @@ test('loads the Document Server script and mounts the editor with the signed con
   await waitFor(() => expect(mounted).toHaveLength(1))
   expect(document.getElementById(mounted[0].id)).toBeTruthy()
   // The signed values go to the editor as the server gave them.
-  expect(mounted[0].config).toEqual({ ...CONFIG, width: '100%', height: '100%', type: 'desktop' })
+  const { events, ...sent } = mounted[0].config
+  expect(sent).toEqual({ ...CONFIG, width: '100%', height: '100%', type: 'desktop' })
+  expect(Object.keys(events as object).sort()).toEqual(['onOutdatedVersion', 'onRequestRefreshFile'])
 
   view.unmount()
   expect(destroyed).toBe(1)
+})
+
+/** A Document Server that refuses every key it is given as outdated, as it does after a restore. */
+function refusingEditor() {
+  const keys: string[] = []
+  scripts.handleDisabledFileLoadingAsSuccess = true
+  window.DocsAPI = {
+    DocEditor: class {
+      constructor(_id: string, config: Record<string, unknown>) {
+        keys.push((config.document as { key: string }).key)
+        const events = config.events as { onRequestRefreshFile(): void; onOutdatedVersion(): void }
+        // Both events, as some versions send: Orbit reports once.
+        queueMicrotask(() => { events.onRequestRefreshFile(); events.onOutdatedVersion() })
+      }
+      destroyEditor() {}
+    },
+  }
+  return keys
+}
+
+/** Answers config requests with a key per request, and key reports with `report`. */
+function serveKeys(report: () => Response) {
+  const reported: string[] = []
+  let configs = 0
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const request = input as Request
+    if (request.method === 'POST') {
+      reported.push(((await request.json()) as { outdated_key: string }).outdated_key)
+      return report()
+    }
+    configs += 1
+    return Response.json({ document_server_url: 'https://office.three.example', config: { ...CONFIG, document: { key: `key-${configs}` } } })
+  }) as unknown as typeof fetch
+  return reported
+}
+
+test('reports a key that the Document Server refuses as outdated, and opens the file with the next one', async () => {
+  const keys = refusingEditor()
+  const reported = serveKeys(() => Response.json({ renewed: true }))
+  const view = renderPage()
+
+  // It gives up after three reports instead of asking for ever.
+  expect(await view.findByText('The file could not be opened')).toBeTruthy()
+  expect(reported).toEqual(['key-1', 'key-2', 'key-3'])
+  expect(keys).toEqual(['key-1', 'key-2', 'key-3', 'key-4'])
+
+  await userEvent.click(view.getByRole('button', { name: 'Try again' }))
+  await waitFor(() => expect(keys).toContain('key-5'))
+})
+
+test('says that someone who can edit has to open a refused file first', async () => {
+  refusingEditor()
+  const reported = serveKeys(() => Response.json(problem('office_file_read_only', 403), { status: 403, headers: { 'content-type': 'application/problem+json' } }))
+  const view = renderPage()
+
+  expect(await view.findByText('The file cannot be opened yet')).toBeTruthy()
+  expect(reported).toEqual(['key-1'])
+  expect(view.queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
 test('says so when the Document Server cannot be reached, and tries again', async () => {

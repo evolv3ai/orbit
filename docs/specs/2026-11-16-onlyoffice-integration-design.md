@@ -147,6 +147,27 @@ As built (OO-8, `apps/server/src/office/editor.rs`, `files.rs` and `jwt.rs`):
 - Errors: 401, 404 `office_file_not_found` (no such file, or no read access), 409
   `office_not_configured` (no Document Server, or the switch is off).
 
+As built (OO-22, a key that the Document Server refuses):
+
+- The Document Server refuses a key that it has seen saved. A file gets such a key back when a
+  backup restore brings back the bytes it had before an edit.
+- The editor page gives the editor the events `onRequestRefreshFile` and `onOutdatedVersion`. On
+  either, it sends the key to `POST /api/v1/office/{kind}/{file_id}/key` (`outdated_key`) and asks
+  for the config again. It gives up after three reports per page and says so.
+- When the reported key is the one the file has, Orbit stores a random suffix for the file
+  (table `office_document_keys`, one row per file), and the key becomes
+  `{file_id}-{digest}-{suffix}`. The suffix is stored, not made per person, so everyone gets the
+  same key and they edit together. Two people who report the same key cause one change.
+- A suffix belongs to the bytes it was made for (`base_key`): after a save the key is
+  `{file_id}-{digest}` of the new bytes again.
+- Only people who may change the file get a new key (403 `office_file_read_only` otherwise): a
+  new key while others edit under the old one would split them. A reader then sees that someone
+  who can edit has to open the file once. A key that the file no longer has changes nothing and
+  is answered for every reader, so a page that holds an earlier version just loads the next one.
+- Run on 2026-11-17 against Document Server 10.0.0 with SQLite and S3 files: backup, edit, save,
+  restore, open. The page reported the key once and the file opened for editing with the restored
+  text. Not run: the same as a reader, and with two people at once.
+
 ### 4.4 Download (OO-9)
 
 `GET /api/v1/office/{kind}/{file_id}/download?t=…` streams the blob through the existing
@@ -342,7 +363,7 @@ Second run (2026-11-17), by hand, same Document Server container (no `ALLOW_*` v
 - **Found: after a restore, the editor refuses such a file** with "Version changed. The file
   version has been changed. The page will be reloaded." The key (4.3) is made from the bytes, so
   the restored file gets a key the Document Server has already seen saved. It lasts until the
-  Document Server forgets the key. Not fixed; it has its own task.
+  Document Server forgets the key. Fixed in OO-22 (below).
 - Still not run: HTTPS behind a proxy (the live server will be the first), a file near the size
   limit, the failed-save messages.
 

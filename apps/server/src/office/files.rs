@@ -2,7 +2,7 @@
 //! with it. Access follows the task or the Docs page of the file, through the checks that the
 //! attachment and page file routes use: this module adds no rule of its own.
 
-use orbit_platform::{Database, Id, Row, UploadService};
+use orbit_platform::{Database, Id, Row, TimestampMillis, UploadService};
 use thiserror::Error;
 
 use super::versions::OfficeFileKind;
@@ -48,6 +48,8 @@ pub struct OfficeFile {
     pub storage_key: String,
     /// An administrator deleted the bytes (Admin → Storage).
     pub deleted: bool,
+    /// The stored suffix of the key of these bytes (`renew_key`), when there is one.
+    pub key_suffix: Option<String>,
 }
 
 impl OfficeFile {
@@ -55,6 +57,14 @@ impl OfficeFile {
     /// everyone who opens these bytes, so they edit together.
     #[must_use]
     pub fn document_key(&self) -> String {
+        match &self.key_suffix {
+            Some(suffix) => format!("{}-{suffix}", self.base_key()),
+            None => self.base_key(),
+        }
+    }
+
+    /// The key without a suffix: the file and its bytes.
+    fn base_key(&self) -> String {
         let digest = self.sha256.get(..16).unwrap_or(&self.sha256);
         format!("{}-{digest}", self.id)
     }
@@ -117,7 +127,7 @@ pub async fn find(
         },
         OfficeFileKind::PageFile => OfficeFileParent::Page { page_id: parent_id },
     };
-    Ok(Some(OfficeFile {
+    let mut file = OfficeFile {
         kind,
         id,
         workspace_id: parse_id(row.try_get("workspace_id")?)?,
@@ -128,7 +138,79 @@ pub async fn find(
         media_type: row.try_get("media_type")?,
         storage_key: row.try_get("storage_key")?,
         deleted: row.try_get::<Option<i64>, _>("deleted_at")?.is_some(),
-    }))
+        key_suffix: None,
+    };
+    // A suffix belongs to the bytes it was made for: after a save it no longer applies.
+    file.key_suffix = sqlx::query_scalar(
+        "SELECT suffix FROM office_document_keys \
+         WHERE file_kind = $1 AND file_id = $2 AND base_key = $3",
+    )
+    .bind(kind.as_str())
+    .bind(id.to_string())
+    .bind(file.base_key())
+    .fetch_optional(database.pool())
+    .await?;
+    Ok(Some(file))
+}
+
+/// Gives `file` another editor key, when `outdated` is the key it has now. The Document Server
+/// refuses a key that it has already seen saved, which a file gets back when a backup restore
+/// brings back earlier bytes; an editor then reports the key.
+///
+/// The new key is stored, so everyone who opens the file gets the same one and they edit
+/// together. `false`: `outdated` is not the key in use (the file has other bytes by now, or
+/// someone else has already renewed the key), and nothing changes.
+pub async fn renew_key(
+    database: &Database,
+    file: &OfficeFile,
+    outdated: &str,
+    now: TimestampMillis,
+) -> Result<bool, OfficeFileError> {
+    if outdated != file.document_key() {
+        return Ok(false);
+    }
+    // The random end of a new id.
+    let suffix: String = Id::new_v7()
+        .to_string()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .rev()
+        .take(12)
+        .collect();
+    let changed = match &file.key_suffix {
+        // A row of other bytes is replaced. A row of these bytes means someone else was first.
+        None => sqlx::query(
+            "INSERT INTO office_document_keys \
+             (file_kind, file_id, workspace_id, base_key, suffix, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6) \
+             ON CONFLICT (file_kind, file_id) DO UPDATE SET base_key = excluded.base_key, \
+             suffix = excluded.suffix, updated_at = excluded.updated_at \
+             WHERE office_document_keys.base_key <> excluded.base_key",
+        )
+        .bind(file.kind.as_str())
+        .bind(file.id.to_string())
+        .bind(file.workspace_id.to_string())
+        .bind(file.base_key())
+        .bind(&suffix)
+        .bind(now.as_millis())
+        .execute(database.pool())
+        .await?
+        .rows_affected(),
+        Some(current) => sqlx::query(
+            "UPDATE office_document_keys SET suffix = $1, updated_at = $2 \
+             WHERE file_kind = $3 AND file_id = $4 AND base_key = $5 AND suffix = $6",
+        )
+        .bind(&suffix)
+        .bind(now.as_millis())
+        .bind(file.kind.as_str())
+        .bind(file.id.to_string())
+        .bind(file.base_key())
+        .bind(current)
+        .execute(database.pool())
+        .await?
+        .rows_affected(),
+    };
+    Ok(changed > 0)
 }
 
 /// What the person of `session` may do with `file`; `None` when they cannot read it.

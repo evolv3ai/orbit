@@ -5002,6 +5002,24 @@ export type OfficeEditorView = {
     document_server_url: string;
 };
 
+/**
+ * A key that the editor refused.
+ */
+export type OfficeKeyRenewal = {
+    /**
+     * The `document.key` of the config that the editor would not open.
+     */
+    outdated_key: string;
+};
+
+export type OfficeKeyRenewalView = {
+    /**
+     * The file has a new key. `false`: the reported key was not the one in use, so the next
+     * config already has another key.
+     */
+    renewed: boolean;
+};
+
 export type OfficeSettingsBody = {
     enabled: boolean;
     /**
@@ -18904,6 +18922,68 @@ export type GetOfficeEditorConfigResponses = {
 };
 
 export type GetOfficeEditorConfigResponse = GetOfficeEditorConfigResponses[keyof GetOfficeEditorConfigResponses];
+
+export type RenewOfficeDocumentKeyData = {
+    body: OfficeKeyRenewal;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path: {
+        /**
+         * `attachment` or `page_file`
+         */
+        kind: string;
+        file_id: string;
+    };
+    query?: never;
+    url: '/api/v1/office/{kind}/{file_id}/key';
+};
+
+export type RenewOfficeDocumentKeyErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * origin_forbidden, office_file_read_only
+     */
+    403: TaskProblem;
+    /**
+     * office_file_not_found
+     */
+    404: TaskProblem;
+    /**
+     * contract_mismatch
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type RenewOfficeDocumentKeyError = RenewOfficeDocumentKeyErrors[keyof RenewOfficeDocumentKeyErrors];
+
+export type RenewOfficeDocumentKeyResponses = {
+    200: OfficeKeyRenewalView;
+};
+
+export type RenewOfficeDocumentKeyResponse = RenewOfficeDocumentKeyResponses[keyof RenewOfficeDocumentKeyResponses];
 
 export type ListApnsDevicesData = {
     body?: never;

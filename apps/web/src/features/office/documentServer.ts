@@ -3,6 +3,15 @@ export interface DocEditor {
   destroyEditor(): void
 }
 
+/**
+ * The events of the editor that Orbit answers. The Document Server sends one of the two when it refuses the
+ * `document.key` as outdated: `onRequestRefreshFile`, or `onOutdatedVersion` on older versions.
+ */
+export interface DocEditorEvents {
+  onRequestRefreshFile(): void
+  onOutdatedVersion(): void
+}
+
 /** What the Document Server's `api.js` defines on `window`. */
 export interface DocsApi {
   DocEditor: new (placeholderId: string, config: Record<string, unknown>) => DocEditor

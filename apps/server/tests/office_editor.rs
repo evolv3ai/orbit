@@ -469,6 +469,162 @@ async fn the_key_is_shared_by_the_people_on_one_version_and_changes_with_the_byt
     );
 }
 
+impl Fixture {
+    /// The `document.key` that `cookie` gets for a task file.
+    async fn config_key(&self, cookie: &str, id: Id) -> String {
+        let (status, body) = self.config(cookie, "attachment", &id.to_string(), "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["config"]["document"]["key"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    /// Reports `key` of a task file as outdated.
+    async fn report_outdated(&self, cookie: &str, file: &str, key: &str) -> (StatusCode, Value) {
+        send(
+            &self.app,
+            json_request(
+                "POST",
+                &format!("/api/v1/office/attachment/{file}/key"),
+                cookie,
+                &json!({"outdated_key": key}),
+            ),
+        )
+        .await
+    }
+}
+
+#[tokio::test]
+async fn a_key_reported_as_outdated_is_renewed_once_for_everyone() {
+    let fixture = Fixture::new().await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let member = fixture.person("Member", Some("member")).await;
+    let owner = fixture.owner_cookie.clone();
+    let file = id.to_string();
+    let first = fixture.config_key(&owner, id).await;
+
+    // A key that the file does not have changes nothing.
+    let (status, answer) = fixture
+        .report_outdated(&owner, &file, &format!("{file}-0000"))
+        .await;
+    assert_eq!(
+        (status, answer),
+        (StatusCode::OK, json!({"renewed": false}))
+    );
+    assert_eq!(fixture.config_key(&owner, id).await, first);
+
+    // Two people opened the file and the Document Server refused the key for both.
+    let (status, answer) = fixture.report_outdated(&owner, &file, &first).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"renewed": true})));
+    let second = fixture.config_key(&owner, id).await;
+    assert_ne!(second, first);
+    // Still a key of this file and these bytes: the callback accepts it.
+    assert!(second.starts_with(&format!("{first}-")), "{second}");
+    let (status, answer) = fixture.report_outdated(&member, &file, &first).await;
+    assert_eq!(
+        (status, answer),
+        (StatusCode::OK, json!({"renewed": false}))
+    );
+    // Both get the same new key, so they edit together.
+    assert_eq!(fixture.config_key(&member, id).await, second);
+    assert_eq!(fixture.config_key(&owner, id).await, second);
+
+    // A renewed key can be refused too (a second restore of the same backup).
+    let (_, answer) = fixture.report_outdated(&member, &file, &second).await;
+    assert_eq!(answer, json!({"renewed": true}));
+    let third = fixture.config_key(&owner, id).await;
+    assert!(third != second && third != first, "{third}");
+    assert!(third.starts_with(&format!("{first}-")), "{third}");
+
+    // A save gives the file other bytes: its key is that of the bytes again.
+    OfficeFileVersions::new((*fixture.database).clone(), fixture.uploads.clone())
+        .save(
+            OfficeFileKind::Attachment,
+            id,
+            b"second bytes",
+            Some(fixture.owner_id),
+        )
+        .await
+        .unwrap();
+    let saved = fixture.config_key(&owner, id).await;
+    assert_eq!(saved, fixture.key_of_attachment(id).await);
+    // And the key of the new bytes can be renewed: the row of the earlier bytes is replaced.
+    let (_, answer) = fixture.report_outdated(&owner, &file, &saved).await;
+    assert_eq!(answer, json!({"renewed": true}));
+    assert!(
+        fixture
+            .config_key(&member, id)
+            .await
+            .starts_with(&format!("{saved}-"))
+    );
+
+    // The key goes with the file.
+    sqlx::query("DELETE FROM attachment_references WHERE id = $1")
+        .bind(&file)
+        .execute(fixture.database.pool())
+        .await
+        .unwrap();
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM office_document_keys")
+        .fetch_one(fixture.database.pool())
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}
+
+#[tokio::test]
+async fn only_people_who_may_change_a_file_renew_its_key() {
+    let fixture = Fixture::new().await;
+    let author = fixture.person("Author", Some("member")).await;
+    let reader = fixture.person("Reader", Some("member")).await;
+    let outsider = fixture.person("Outsider", None).await;
+    let (status, created) = send(
+        &fixture.app,
+        multipart_request(
+            &format!(
+                "/api/v1/workspaces/{}/tasks/{}/comments/attachments",
+                fixture.workspace_id, fixture.task_id
+            ),
+            &author,
+            "notes.docx",
+            b"comment bytes",
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let file = created["attachments"][0]["id"].as_str().unwrap().to_owned();
+    let (_, body) = fixture.config(&reader, "attachment", &file, "").await;
+    let key = body["config"]["document"]["key"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // A key that the file does not have: the reader only has to ask for the config again.
+    let (status, answer) = fixture
+        .report_outdated(&reader, &file, &format!("{file}-0000"))
+        .await;
+    assert_eq!(
+        (status, answer),
+        (StatusCode::OK, json!({"renewed": false}))
+    );
+    // A reader of the comment's file may not: a new key would split the people who edit.
+    let (status, answer) = fixture.report_outdated(&reader, &file, &key).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{answer}");
+    assert_eq!(answer["code"], "office_file_read_only");
+    // Who cannot read the file learns nothing, and nobody does without a session.
+    let (status, answer) = fixture.report_outdated(&outsider, &file, &key).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{answer}");
+    let (status, _) = fixture.report_outdated("", &file, &key).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, body) = fixture.config(&author, "attachment", &file, "").await;
+    assert_eq!(body["config"]["document"]["key"], key.as_str());
+
+    let (status, answer) = fixture.report_outdated(&author, &file, &key).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"renewed": true})));
+    let (_, body) = fixture.config(&reader, "attachment", &file, "").await;
+    assert_ne!(body["config"]["document"]["key"], key.as_str());
+}
+
 #[tokio::test]
 async fn a_file_of_a_comment_is_read_only_for_everyone_but_who_may_edit_the_comment() {
     let fixture = Fixture::new().await;

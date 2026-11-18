@@ -508,6 +508,7 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::office::routes::test_office_connection,
         crate::office::editor::get_office_editor_config,
         crate::office::editor::get_office_status,
+        crate::office::editor::renew_office_document_key,
     )
 )]
 struct ApiDocument;
@@ -1163,6 +1164,10 @@ fn problem_responses(operation_id: &str) -> BTreeMap<&'static str, String> {
             add_code(&mut responses, "404", "office_file_not_found");
             add_code(&mut responses, "409", "office_not_configured");
             add_code(&mut responses, "422", "office_file_unsupported");
+        }
+        "renew_office_document_key" => {
+            add_code(&mut responses, "403", "office_file_read_only");
+            add_code(&mut responses, "404", "office_file_not_found");
         }
         "test_office_connection" => {
             add_code(&mut responses, "403", "installation_admin_required");

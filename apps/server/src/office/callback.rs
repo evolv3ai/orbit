@@ -131,7 +131,8 @@ async fn handle(
         .get("key")
         .and_then(Value::as_str)
         .ok_or(Refusal::Invalid("no key"))?;
-    // A key of this file: `{file_id}-{digest}` (`OfficeFile::document_key`).
+    // A key of this file: `{file_id}-{digest}`, with a suffix after a renewal
+    // (`OfficeFile::document_key`).
     if key
         .strip_prefix(&file_id.to_string())
         .is_none_or(|rest| !rest.starts_with('-'))

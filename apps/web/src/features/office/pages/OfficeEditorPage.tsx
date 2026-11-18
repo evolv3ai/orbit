@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { DocumentText } from 'reicon-react'
-import { getOfficeEditorConfig } from '@orbit/api/generated/sdk.gen'
+import { getOfficeEditorConfig, renewOfficeDocumentKey } from '@orbit/api/generated/sdk.gen'
 import type { OfficeEditorView } from '@orbit/api/generated/types.gen'
 import { ApiProblem } from '@orbit/api/problem'
 import { apiClient } from '@/api/client'
@@ -12,7 +12,10 @@ import { LoadingScreen } from '@/components/common/LoadingScreen'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { editorLanguage } from '@/features/office/officeFiles'
 import { useTheme } from '@/lib/themeContext'
-import { loadDocsApi } from '@/features/office/documentServer'
+import { loadDocsApi, type DocEditorEvents } from '@/features/office/documentServer'
+
+/** How often one page reports the key of its file as outdated before it gives up. */
+const MAX_KEY_REPORTS = 3
 
 /** A path of this Orbit to go back to; anything else leads home. */
 function backPath(value: string | null) {
@@ -59,7 +62,40 @@ export function OfficeEditorPage() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   })
+  const reports = useRef(0)
+  // The Document Server keeps refusing the file ('outdated'), or only someone who may edit it can help ('read-only').
+  const [refused, setRefused] = useState<'outdated' | 'read-only' | null>(null)
 
+  /**
+   * The Document Server refused the key as outdated: it has seen a file saved under it. Either the file has
+   * other bytes by now, and a new config opens them, or a restore brought earlier bytes back, and Orbit gives
+   * the file a new key.
+   */
+  async function reportOutdated(key: unknown) {
+    reports.current += 1
+    if (typeof key !== 'string' || reports.current > MAX_KEY_REPORTS) {
+      setRefused('outdated')
+      return
+    }
+    try {
+      await renewOfficeDocumentKey({ client: apiClient, throwOnError: true, path: { kind, file_id: fileId }, body: { outdated_key: key } })
+    } catch (error) {
+      setRefused(error instanceof ApiProblem && error.code === 'office_file_read_only' ? 'read-only' : 'outdated')
+      return
+    }
+    void config.refetch()
+  }
+
+  if (refused === 'read-only') {
+    return <Notice title="The file cannot be opened yet" description="After a restore, someone who can edit this file has to open it once. You can still download it." back={back} />
+  }
+  if (refused === 'outdated') {
+    return (
+      <Notice title="The file could not be opened" description="The Document Server does not accept this version of the file. Try again in a while. You can still download it." back={back}>
+        <Button variant="outline" onClick={() => void config.refetch().then(() => { reports.current = 0; setRefused(null) })}>Try again</Button>
+      </Notice>
+    )
+  }
   if (config.isPending) return <LoadingScreen />
   if (config.isError) {
     const message = problemMessage(config.error)
@@ -69,7 +105,8 @@ export function OfficeEditorPage() {
       </Notice>
     )
   }
-  return <Editor key={config.dataUpdatedAt} view={config.data} back={back} onRetry={() => void config.refetch()} />
+  const key = (config.data.config as { document?: { key?: unknown } }).document?.key
+  return <Editor key={config.dataUpdatedAt} view={config.data} back={back} onRetry={() => void config.refetch()} onOutdated={() => void reportOutdated(key)} />
 }
 
 function Notice({ title, description, back, children }: { title: string; description: string; back: string; children?: React.ReactNode }) {
@@ -87,9 +124,11 @@ function Notice({ title, description, back, children }: { title: string; descrip
   )
 }
 
-function Editor({ view, back, onRetry }: { view: OfficeEditorView; back: string; onRetry: () => void }) {
+function Editor({ view, back, onRetry, onOutdated }: { view: OfficeEditorView; back: string; onRetry: () => void; onOutdated: () => void }) {
   const container = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'unreachable'>('loading')
+  const outdated = useRef(onOutdated)
+  useEffect(() => { outdated.current = onOutdated })
 
   useEffect(() => {
     let cancelled = false
@@ -101,7 +140,15 @@ function Editor({ view, back, onRetry }: { view: OfficeEditorView; back: string;
       const placeholder = document.createElement('div')
       placeholder.id = 'office-editor'
       host.replaceChildren(placeholder)
-      editor = new api.DocEditor(placeholder.id, { ...view.config, width: '100%', height: '100%', type: 'desktop' })
+      // One report per config: the editor can send both events.
+      let reported = false
+      const report = () => {
+        if (reported || cancelled) return
+        reported = true
+        outdated.current()
+      }
+      const events: DocEditorEvents = { onRequestRefreshFile: report, onOutdatedVersion: report }
+      editor = new api.DocEditor(placeholder.id, { ...view.config, width: '100%', height: '100%', type: 'desktop', events })
       setState('ready')
     }, () => {
       if (!cancelled) setState('unreachable')

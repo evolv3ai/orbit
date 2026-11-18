@@ -118,6 +118,8 @@ It must print `200`. If it does not, fix the address, the firewall or the Docker
 
 The file in Orbit is unchanged when a save fails.
 
+**After a backup restore, a file says "The file cannot be opened yet".** The file was edited after the backup, and the restore brought its earlier content back. The Document Server refuses such a file until Orbit gives it a new key, which happens when someone who can edit the file opens it. Ask one of them to open it once. For people who can edit, the file opens after a short reload.
+
 **The connection test fails.** Orbit cannot reach `{internal URL or Document Server URL}/healthcheck` within 10 seconds, or the answer is not `true`. Run the same request from the Orbit host.
 
 ## Limits

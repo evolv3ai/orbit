@@ -20301,6 +20301,150 @@
         ]
       }
     },
+    "/api/v1/office/{kind}/{file_id}/key": {
+      "post": {
+        "tags": [
+          "crate::office::editor"
+        ],
+        "summary": "The editor page reports that the Document Server refused the key of a file as outdated: it has\nalready seen a file saved under that key. That happens when a backup restore brings back the\nbytes a file had before an edit. Orbit gives the file a new key, the same for everyone; ask for\nthe config again to open the file. Only people who may change the file do this: a new key\nwhile others edit under the old one would split them.",
+        "operationId": "renew_office_document_key",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "`attachment` or `page_file`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Orbit-Contract",
+            "in": "header",
+            "description": "Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficeKeyRenewal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeKeyRenewalView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_proxy_headers",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "authentication_required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_forbidden, office_file_read_only",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "office_file_not_found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "contract_mismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "internal_error or another documented stable code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/push/apns": {
       "get": {
         "tags": [
@@ -79307,6 +79451,31 @@
           "document_server_url": {
             "type": "string",
             "description": "The Document Server as browsers reach it. The page loads\n`{document_server_url}/web-apps/apps/api/documents/api.js` from it."
+          }
+        }
+      },
+      "OfficeKeyRenewal": {
+        "type": "object",
+        "description": "A key that the editor refused.",
+        "required": [
+          "outdated_key"
+        ],
+        "properties": {
+          "outdated_key": {
+            "type": "string",
+            "description": "The `document.key` of the config that the editor would not open."
+          }
+        }
+      },
+      "OfficeKeyRenewalView": {
+        "type": "object",
+        "required": [
+          "renewed"
+        ],
+        "properties": {
+          "renewed": {
+            "type": "boolean",
+            "description": "The file has a new key. `false`: the reported key was not the one in use, so the next\nconfig already has another key."
           }
         }
       },
