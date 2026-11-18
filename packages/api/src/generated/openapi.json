@@ -20034,6 +20034,103 @@
         ]
       }
     },
+    "/api/v1/office/save-failures": {
+      "get": {
+        "tags": [
+          "crate::office::failures"
+        ],
+        "summary": "The files you can open whose last save from the office editor failed: the file in Orbit does\nnot have the changes of that editing session. A file leaves the list with its next save that\nworks. At most 200 files, the latest failures first.",
+        "operationId": "list_office_save_failures",
+        "parameters": [
+          {
+            "name": "X-Orbit-Contract",
+            "in": "header",
+            "description": "Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficeSaveFailuresView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_proxy_headers",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "authentication_required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "contract_mismatch",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request_too_large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "internal_error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "internal_error or another documented stable code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskProblem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/office/status": {
       "get": {
         "tags": [
@@ -20306,7 +20403,7 @@
         "tags": [
           "crate::office::editor"
         ],
-        "summary": "The editor page reports that the Document Server refused the key of a file as outdated: it has\nalready seen a file saved under that key. That happens when a backup restore brings back the\nbytes a file had before an edit. Orbit gives the file a new key, the same for everyone; ask for\nthe config again to open the file. Only people who may change the file do this: a new key\nwhile others edit under the old one would split them.",
+        "summary": "The editor page reports that the Document Server refused the key of a file as outdated: it has\nalready seen a file saved under that key. That happens when a backup restore brings back the\nbytes a file had before an edit. Orbit gives the file a new key, the same for everyone; ask for\nthe config again to open the file. Only people who may change the file get a new key: a new\nkey while others edit under the old one would split them. A key that the file no longer has\nchanges nothing, whoever reports it.",
         "operationId": "renew_office_document_key",
         "parameters": [
           {
@@ -78510,7 +78607,14 @@
           },
           "kind": {
             "type": "string",
-            "description": "`task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task\ndescription), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or\n`chat_mentioned` (a chat message) or `import_finished` (a long import ended)."
+            "description": "`task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task\ndescription), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or\n`chat_mentioned` (a chat message) or `import_finished` (a long import ended) or\n`office_save_failed` (a save from the office editor failed; a feature of the\n`evolv3ai/orbit` fork)."
+          },
+          "office_file_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the file of an `office_save_failed` notification. The file is on the task\n(`task_id`) or the page (`page_id`)."
           },
           "page_block_id": {
             "type": [
@@ -78553,7 +78657,7 @@
               "string",
               "null"
             ],
-            "description": "Set for task notifications."
+            "description": "Set for task notifications, and for an `office_save_failed` one of a task's file."
           },
           "workspace_id": {
             "type": "string"
@@ -79476,6 +79580,42 @@
           "renewed": {
             "type": "boolean",
             "description": "The file has a new key. `false`: the reported key was not the one in use, so the next\nconfig already has another key."
+          }
+        }
+      },
+      "OfficeSaveFailureView": {
+        "type": "object",
+        "description": "A file whose last save from the editor failed.",
+        "required": [
+          "kind",
+          "file_id",
+          "failed_at"
+        ],
+        "properties": {
+          "failed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "file_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`attachment` (a file of a task or a comment) or `page_file`."
+          }
+        }
+      },
+      "OfficeSaveFailuresView": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OfficeSaveFailureView"
+            }
           }
         }
       },
@@ -81482,7 +81622,14 @@
                 },
                 "kind": {
                   "type": "string",
-                  "description": "`task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task\ndescription), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or\n`chat_mentioned` (a chat message) or `import_finished` (a long import ended)."
+                  "description": "`task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task\ndescription), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or\n`chat_mentioned` (a chat message) or `import_finished` (a long import ended) or\n`office_save_failed` (a save from the office editor failed; a feature of the\n`evolv3ai/orbit` fork)."
+                },
+                "office_file_name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The name of the file of an `office_save_failed` notification. The file is on the task\n(`task_id`) or the page (`page_id`)."
                 },
                 "page_block_id": {
                   "type": [
@@ -81525,7 +81672,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Set for task notifications."
+                  "description": "Set for task notifications, and for an `office_save_failed` one of a task's file."
                 },
                 "workspace_id": {
                   "type": "string"

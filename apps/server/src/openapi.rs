@@ -509,6 +509,7 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::office::editor::get_office_editor_config,
         crate::office::editor::get_office_status,
         crate::office::editor::renew_office_document_key,
+        crate::office::failures::list_office_save_failures,
     )
 )]
 struct ApiDocument;

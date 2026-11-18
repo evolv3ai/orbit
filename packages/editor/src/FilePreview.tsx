@@ -1,7 +1,7 @@
 import { FileBlockWrapper } from '@blocknote/react'
 import type { ReactCustomBlockRenderProps } from '@blocknote/react'
 import { useContext, useEffect, useState } from 'react'
-import { OfficeLinkContext } from './officeLink'
+import { OfficeLinkContext, OfficeSaveFailedContext, SAVE_FAILED_HELP } from './officeLink'
 import { filePreviewKind, isPdfBytes, showsFilePreview, type FilePreviewKind } from './mediaFiles'
 
 /** Text shown in the page. A longer file keeps the file row instead of a cut-off preview. */
@@ -42,11 +42,19 @@ export function FilePreview(props: FileBlockProps) {
 }
 
 /** "Open in editor": the office editor, in a new tab, so the page stays as it is. */
-function OfficeLink({ href }: { href: string }) {
+function OfficeLink({ href, url }: { href: string; url: string }) {
+  const failed = useContext(OfficeSaveFailedContext)?.(url) ?? false
   return (
-    <a data-slot="file-office-link" href={href} target="_blank" rel="noopener" className="shrink-0 text-sm font-medium underline underline-offset-4">
-      Open in editor
-    </a>
+    <>
+      {failed ? (
+        <span data-slot="file-office-save-failed" role="status" title={SAVE_FAILED_HELP} className="shrink-0 text-sm font-medium text-destructive">
+          Last save failed
+        </span>
+      ) : null}
+      <a data-slot="file-office-link" href={href} target="_blank" rel="noopener" className="shrink-0 text-sm font-medium underline underline-offset-4">
+        Open in editor
+      </a>
+    </>
   )
 }
 
@@ -58,7 +66,7 @@ function OfficeFile({ name, url, officeHref }: FileFields & { officeHref: string
       <a href={url} download={name || undefined} className="min-w-0 flex-1 truncate text-sm">
         {name || url}
       </a>
-      <OfficeLink href={officeHref} />
+      <OfficeLink href={officeHref} url={url} />
     </div>
   )
 }
@@ -85,7 +93,7 @@ function Preview({ kind, name, url, officeHref }: { kind: FilePreviewKind; offic
       {name || officeHref ? (
         <div className="flex min-w-0 items-center gap-3" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="min-w-0 flex-1 truncate text-sm">{name}</div>
-          {officeHref ? <OfficeLink href={officeHref} /> : null}
+          {officeHref ? <OfficeLink href={officeHref} url={url} /> : null}
         </div>
       ) : null}
       {kind === 'video' ? <Video url={url} /> : null}

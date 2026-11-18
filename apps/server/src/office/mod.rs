@@ -4,6 +4,7 @@
 
 pub mod callback;
 pub mod editor;
+pub mod failures;
 pub mod files;
 pub mod jwt;
 pub mod routes;

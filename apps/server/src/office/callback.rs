@@ -5,6 +5,9 @@
 //!
 //! The answer is `{"error":0}` when Orbit has done its part; anything else makes the editor show
 //! an error to the people in the document. Not in the OpenAPI document: no client of Orbit calls it.
+//!
+//! When a save fails, on the Document Server or in Orbit, the file gets a mark and the person who
+//! edited last is told (`failures::record`): the file in Orbit stays as it was.
 
 use std::time::Duration;
 
@@ -18,6 +21,7 @@ use orbit_platform::{Database, Id, RequestId, TimestampMillis};
 use serde_json::{Value, json};
 use thiserror::Error;
 
+use super::failures;
 use super::files::{self, OfficeFile, office_format};
 use super::jwt;
 use super::routes::OfficeState;
@@ -59,6 +63,19 @@ enum Refusal {
 }
 
 impl Refusal {
+    /// A short name for the audit log.
+    const fn name(&self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::Unsigned => "unsigned",
+            Self::Invalid(_) => "invalid",
+            Self::ForeignSource => "foreign_source",
+            Self::Fetch(_) => "fetch",
+            Self::TooLarge => "too_large",
+            Self::Internal(_) => "internal",
+        }
+    }
+
     const fn status(&self) -> StatusCode {
         match self {
             Self::NotFound => StatusCode::NOT_FOUND,
@@ -146,10 +163,25 @@ async fn handle(
                 .await
                 .map_err(internal)?
                 .ok_or(Refusal::NotFound)?;
-            save(
+            let saved = save(
                 state, &settings, &file, &claims, key, status, request_id, now,
             )
-            .await
+            .await;
+            // The edits did not reach Orbit. A file that is gone has nobody to tell.
+            if let Err(refusal) = &saved
+                && !matches!(refusal, Refusal::NotFound)
+            {
+                save_failed(
+                    database,
+                    &file,
+                    &claims,
+                    json!({"kind": kind.as_str(), "status": status, "reason": refusal.name()}),
+                    request_id,
+                    now,
+                )
+                .await;
+            }
+            saved
         }
         STATUS_SAVE_FAILED | STATUS_FORCE_SAVE_FAILED => {
             let Some(file) = files::find(database, kind, file_id)
@@ -165,18 +197,16 @@ async fn handle(
                 status,
                 "the office Document Server could not save a file"
             );
-            record(
+            save_failed(
                 database,
                 &file,
-                last_editor(database, &claims).await.map_err(internal)?,
-                "office.save_failed",
-                AuditOutcome::Failure,
+                &claims,
                 json!({"kind": kind.as_str(), "status": status}),
                 request_id,
                 now,
             )
-            .await
-            .map_err(internal)
+            .await;
+            Ok(())
         }
         // Being edited, closed without changes, or a status Orbit does not act on.
         _ => Ok(()),
@@ -279,6 +309,43 @@ async fn save(
     )
     .await
     .map_err(internal)
+}
+
+/// A save failed: an `office.save_failed` audit event, the mark on the file and the notification
+/// for the person who edited last. An error here is logged; the answer to the Document Server
+/// stays what the save made it.
+async fn save_failed(
+    database: &Database,
+    file: &OfficeFile,
+    claims: &Value,
+    metadata: Value,
+    request_id: &str,
+    now: TimestampMillis,
+) {
+    let editor = match last_editor(database, claims).await {
+        Ok(editor) => editor,
+        Err(error) => {
+            tracing::warn!(file_id = %file.id, %error, "office save failure: no editor");
+            None
+        }
+    };
+    if let Err(error) = record(
+        database,
+        file,
+        editor,
+        "office.save_failed",
+        AuditOutcome::Failure,
+        metadata,
+        request_id,
+        now,
+    )
+    .await
+    {
+        tracing::warn!(file_id = %file.id, %error, "office save failure not audited");
+    }
+    if let Err(error) = failures::record(database, file, editor, now).await {
+        tracing::warn!(file_id = %file.id, %error, "office save failure not recorded");
+    }
 }
 
 /// True when `url` is on the configured Document Server (its public or its internal address).

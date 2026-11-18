@@ -223,9 +223,9 @@ As built (OO-10, `apps/server/src/office/callback.rs`):
 - `users[0]` is the author only when it is an account of this Orbit; otherwise the version has
   no author.
 - A save writes the audit event `office.file_saved` to the workspace; status 3 and 7 write
-  `office.save_failed` and a warning to the log. **Not built:** a mark on the file and a
-  notification to the last editor. The editor itself shows the people in the document that the
-  save failed.
+  `office.save_failed` and a warning to the log. The mark on the file and the notification to
+  the last editor came with OO-23 (below). The editor itself shows the people in the document
+  that the save failed.
 - **Force save (status 6) is stored like a save, so the file's key changes while people still
   edit.** Someone who opens the file then gets a new editing session, apart from the people
   already in it, and the later save of the old session replaces the newer bytes (they are kept
@@ -233,6 +233,32 @@ As built (OO-10, `apps/server/src/office/callback.rs`):
   the Document Server. A fix needs a stored key per editing session.
 - The web app is not told that a file changed: an open task or page shows the new size after a
   reload.
+
+As built (OO-23, telling the person when a save fails):
+
+- A failed save is: status 3 or 7 from the Document Server, or a save (status 2 or 6) that the
+  Document Server signed and Orbit refuses (the address is not on the Document Server, the file
+  is not handed over, it has another format, it is over the size limit, or it cannot be stored).
+  A callback without a valid signature, or for a file that is gone, is no failed save.
+- Each one writes an `office.save_failed` audit event (with `reason` for the ones Orbit refuses),
+  marks the file, and tells the person who edited last. An error in these steps is logged and
+  does not change the answer to the Document Server.
+- **The mark** is a row in `office_save_failures` (one per file). It goes with the next save
+  that works, in the transaction of that save, and with the file.
+  `GET /api/v1/office/save-failures` lists the marked files that the person can read, at most
+  200. The web app shows "Last save failed" next to "Open in editor": on the files of tasks and
+  comments, and on file blocks of pages.
+- **The notification** has the kind `office_save_failed`, the name of the file
+  (`notifications.office_file_name`) and the task or the page of the file. It goes to
+  `users[0]` of the callback, when that is a member of the workspace and, for a page, can have
+  notifications of that page. One per file and person in 10 minutes, because the Document Server
+  repeats a callback that Orbit refuses. The inbox of the web app and of the mobile app show it.
+  It is not pushed and not mailed.
+- The mobile app has no "Open in editor", so it does not show the mark.
+- Run on 2026-11-17 against Document Server 10.0.0: with a file size limit of 10 KB, an edit made
+  the saved file too large. Orbit refused it, the task showed "Last save failed", and the inbox
+  had the notification. Not run in a browser: a file block of a page, and status 3 or 7 from a
+  real Document Server.
 
 ### 4.6 Versions (new)
 
@@ -429,6 +455,14 @@ As built (OO-6):
   and one Admin page. Changes to shared files are limited to: `router.rs` (one merge),
   `security.rs` (allowlist entry, CSP source), `upload.rs` (reference count), `instance.rs`
   (settings), `App.tsx` and the file-preview action.
+- **The notification kind `office_save_failed` (OO-23) is in a shared table.** The migration
+  `20261118030000_office_save_failures` adds the kind and a column to `notifications`. On SQLite
+  that rebuilds the table, as upstream does when it adds a kind. When a merge brings an upstream
+  migration that rebuilds `notifications`, add the kind, the column `office_file_name` and their
+  checks to it before it runs anywhere, or it fails on an Orbit that has such a notification.
+  The test `a_failed_save_marks_the_file_and_tells_the_person_who_edited_last` fails when the
+  kind is lost. Also changed for it: `repositories/tasks.rs` (the notification record) and the
+  inbox wording of the web and mobile apps.
 - Work on a `feat/onlyoffice` branch; rebase on `upstream/main` before each release.
 - If the integration proves itself, offer it upstream, which needs the mobile port.
 

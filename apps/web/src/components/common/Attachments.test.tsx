@@ -86,6 +86,11 @@ test('"Open in editor" shows on the files the caller gives an address for', () =
   expect(links[0].getAttribute('target')).toBe('_blank')
   view.unmount()
 
+  // The file whose last save from the editor failed says so.
+  const marked = render(<Attachments attachments={files} editorHref={editorHref} saveFailed={(url) => url === '/files/a'} />)
+  expect(marked.getAllByRole('status').map((mark) => mark.textContent)).toEqual(['Last save failed'])
+  marked.unmount()
+
   // Office editing is off: the caller passes nothing.
   expect(render(<Attachments attachments={files} />).queryByRole('link', { name: 'Open in editor' })).toBeNull()
 })

@@ -4559,9 +4559,16 @@ export type NotificationRecord = {
     /**
      * `task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task
      * description), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or
-     * `chat_mentioned` (a chat message) or `import_finished` (a long import ended).
+     * `chat_mentioned` (a chat message) or `import_finished` (a long import ended) or
+     * `office_save_failed` (a save from the office editor failed; a feature of the
+     * `evolv3ai/orbit` fork).
      */
     kind: string;
+    /**
+     * The name of the file of an `office_save_failed` notification. The file is on the task
+     * (`task_id`) or the page (`page_id`).
+     */
+    office_file_name?: string | null;
     /**
      * The block with the mention of a `page_mentioned` notification (a deep link anchor).
      */
@@ -4576,7 +4583,7 @@ export type NotificationRecord = {
     read_at?: string | null;
     recipient_user_id: string;
     /**
-     * Set for task notifications.
+     * Set for task notifications, and for an `office_save_failed` one of a task's file.
      */
     task_id?: string | null;
     workspace_id: string;
@@ -5018,6 +5025,22 @@ export type OfficeKeyRenewalView = {
      * config already has another key.
      */
     renewed: boolean;
+};
+
+/**
+ * A file whose last save from the editor failed.
+ */
+export type OfficeSaveFailureView = {
+    failed_at: string;
+    file_id: string;
+    /**
+     * `attachment` (a file of a task or a comment) or `page_file`.
+     */
+    kind: string;
+};
+
+export type OfficeSaveFailuresView = {
+    files: Array<OfficeSaveFailureView>;
 };
 
 export type OfficeSettingsBody = {
@@ -5801,9 +5824,16 @@ export type PageNotificationRecord = {
         /**
          * `task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task
          * description), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or
-         * `chat_mentioned` (a chat message) or `import_finished` (a long import ended).
+         * `chat_mentioned` (a chat message) or `import_finished` (a long import ended) or
+         * `office_save_failed` (a save from the office editor failed; a feature of the
+         * `evolv3ai/orbit` fork).
          */
         kind: string;
+        /**
+         * The name of the file of an `office_save_failed` notification. The file is on the task
+         * (`task_id`) or the page (`page_id`).
+         */
+        office_file_name?: string | null;
         /**
          * The block with the mention of a `page_mentioned` notification (a deep link anchor).
          */
@@ -5818,7 +5848,7 @@ export type PageNotificationRecord = {
         read_at?: string | null;
         recipient_user_id: string;
         /**
-         * Set for task notifications.
+         * Set for task notifications, and for an `office_save_failed` one of a task's file.
          */
         task_id?: string | null;
         workspace_id: string;
@@ -18798,6 +18828,54 @@ export type PutNotificationPreferencesResponses = {
 };
 
 export type PutNotificationPreferencesResponse = PutNotificationPreferencesResponses[keyof PutNotificationPreferencesResponses];
+
+export type ListOfficeSaveFailuresData = {
+    body?: never;
+    headers?: {
+        /**
+         * Frontend contract identifier. Unsupported values return contract_mismatch; current value: orbit-api-v1.
+         */
+        'X-Orbit-Contract'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/office/save-failures';
+};
+
+export type ListOfficeSaveFailuresErrors = {
+    /**
+     * invalid_proxy_headers
+     */
+    400: TaskProblem;
+    /**
+     * authentication_required
+     */
+    401: TaskProblem;
+    /**
+     * contract_mismatch
+     */
+    409: TaskProblem;
+    /**
+     * request_too_large
+     */
+    413: TaskProblem;
+    /**
+     * internal_error
+     */
+    500: TaskProblem;
+    /**
+     * internal_error or another documented stable code
+     */
+    default: TaskProblem;
+};
+
+export type ListOfficeSaveFailuresError = ListOfficeSaveFailuresErrors[keyof ListOfficeSaveFailuresErrors];
+
+export type ListOfficeSaveFailuresResponses = {
+    200: OfficeSaveFailuresView;
+};
+
+export type ListOfficeSaveFailuresResponse = ListOfficeSaveFailuresResponses[keyof ListOfficeSaveFailuresResponses];
 
 export type GetOfficeStatusData = {
     body?: never;

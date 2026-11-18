@@ -8,6 +8,7 @@ import { ImageViewer } from './ImageViewer'
 import { Button } from '@/components/ui/button'
 import { Tip } from '@/components/common/Tip'
 import { cn } from 'cn'
+import { SAVE_FAILED_HELP } from '@orbit/editor/officeLink'
 
 const SINGLE_IMAGE_MAX_HEIGHT = 300
 
@@ -38,6 +39,7 @@ export function Attachments({
   hasTextContent = true,
   onRemove,
   editorHref,
+  saveFailed,
 }: {
   attachments: Attachment[]
   hasTextContent?: boolean
@@ -45,6 +47,8 @@ export function Attachments({
   onRemove?: (attachmentId: string) => void
   /** Gives the address of "Open in editor" for a file, or `null`. Without it, no file has the action. */
   editorHref?: (fileName: string, url: string) => string | null
+  /** Says of a file (its download address) whether its last save from the office editor failed. */
+  saveFailed?: (url: string) => boolean
 }) {
   const [viewerImage, setViewerImage] = useState<Attachment | null>(null)
   const [viewerPdf, setViewerPdf] = useState<Attachment | null>(null)
@@ -129,7 +133,7 @@ export function Attachments({
               {onRemove ? (
                 <RemoveAttachmentButton attachment={att} onRemove={onRemove} />
               ) : null}
-              <EditorLink href={att.deleted ? null : editorHref?.(att.fileName, att.url) ?? null} />
+              <EditorLink href={att.deleted ? null : editorHref?.(att.fileName, att.url) ?? null} failed={saveFailed?.(att.url) ?? false} />
             </span>
           ))}
         </div>
@@ -146,12 +150,19 @@ export function Attachments({
 }
 
 /** "Open in editor" under a file card: the office editor, in a new tab. */
-function EditorLink({ href }: { href: string | null }) {
+function EditorLink({ href, failed }: { href: string | null; failed: boolean }) {
   if (!href) return null
   return (
-    <a data-slot="attachment-editor-link" href={href} target="_blank" rel="noopener" className="mt-1 inline-block px-1 text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">
-      Open in editor
-    </a>
+    <span className="mt-1 flex flex-wrap items-center gap-x-2 px-1 text-xs font-medium">
+      <a data-slot="attachment-editor-link" href={href} target="_blank" rel="noopener" className="text-muted-foreground underline underline-offset-4 hover:text-foreground">
+        Open in editor
+      </a>
+      {failed ? (
+        <span data-slot="attachment-save-failed" role="status" title={SAVE_FAILED_HELP} className="text-destructive">
+          Last save failed
+        </span>
+      ) : null}
+    </span>
   )
 }
 

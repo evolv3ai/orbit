@@ -28,6 +28,8 @@ export function notificationCopy(notification: NotificationRecord, pageTitle: st
         ? { title: `${name} import failed`, body: 'Open the import to see what happened.' }
         : { title: `${name} import complete`, body: 'Open the import to see what was imported.' }
     }
+    case 'office_save_failed':
+      return { title: 'A file was not saved', body: `Your changes to “${notification.office_file_name ?? 'a file'}” in the office editor did not reach Orbit. The file is as it was before.` }
     case 'chat_mentioned':
       return { title: `${actor} mentioned you in chat`, body: 'Open the conversation to see the message.' }
     case 'page_mentioned':

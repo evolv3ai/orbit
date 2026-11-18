@@ -33,6 +33,17 @@ test('mentions are every mention kind, not assignments', () => {
   expect(isMention(notification({ kind: 'task_assigned' }))).toBe(false)
 })
 
+test('a failed save from the office editor names the file and opens its task or page', () => {
+  const task = notification({ kind: 'office_save_failed', task_id: 'task-1', office_file_name: 'report.docx' })
+  expect(notificationTarget(task)).toBe('/tasks/task-1')
+  expect(notificationCopy(task, undefined, 'Me')).toEqual({
+    title: 'A file was not saved',
+    body: 'Your changes to “report.docx” in the office editor did not reach Orbit. The file is as it was before.',
+  })
+  expect(notificationTarget(notification({ kind: 'office_save_failed', page_id: 'page-1', office_file_name: 'budget.xlsx' }))).toBe('/docs/page-1')
+  expect(isMention(task)).toBe(false)
+})
+
 test('an import notice opens its import screen and names how it ended', () => {
   const done = notification({ kind: 'import_finished', import_source: 'linear', import_id: 'imp-1', import_status: 'completed' })
   expect(notificationTarget(done)).toBe('/settings/import/linear/imp-1')

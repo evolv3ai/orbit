@@ -8,7 +8,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { ConfirmDeleteModal } from '@/components/common/ConfirmDeleteModal'
 import { Attachments } from '@/components/common/Attachments'
-import { useOfficeEditorHref } from '@/features/office/api'
+import { useOfficeEditorHref, useOfficeSaveFailed } from '@/features/office/api'
 import { contentEquals, trimBlocks } from '@/features/docs/editor/content'
 import { uploadInlineFile } from '@/features/tasks/api/inlineFiles'
 import { commentSaveAction, isEmptyRichText } from '@/features/tasks/lib/richText'
@@ -51,6 +51,7 @@ export function CommentItem({ state, taskId, comment, reply }: CommentItemProps)
   const [bodyRef, nearScreen] = useNearViewport<HTMLDivElement>()
   const mentionTokens = useMemo(() => buildMentionTokens(state.users, []), [state.users])
   const officeHref = useOfficeEditorHref()
+  const officeSaveFailed = useOfficeSaveFailed()
   const hasBody = shown !== null || (comment.bodyJson ? !isEmptyRichText(comment.bodyJson) : comment.body.trim() !== '')
 
   const startEdit = () => {
@@ -164,7 +165,7 @@ export function CommentItem({ state, taskId, comment, reply }: CommentItemProps)
             </div>
           ) : null}
           {comment.attachments && comment.attachments.length > 0 ? (
-            <Attachments attachments={comment.attachments} hasTextContent={hasBody} editorHref={officeHref} />
+            <Attachments attachments={comment.attachments} hasTextContent={hasBody} editorHref={officeHref} saveFailed={officeSaveFailed} />
           ) : null}
         </div>
       </article>

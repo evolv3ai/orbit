@@ -26,6 +26,18 @@ test('a description mention is a mention that opens the task', () => {
   expect(notificationCopy(notification).body).toBe('Someone mentioned you in a task description.')
 })
 
+test('a failed save from the office editor names the file and opens its task or page', () => {
+  const task = { kind: 'office_save_failed', task_id: 'task-1', office_file_name: 'report.docx' } as NotificationRecord
+  expect(notificationTarget(task)).toBe('/tasks/task-1')
+  expect(notificationCopy(task)).toEqual({
+    title: 'A file was not saved',
+    body: 'Your changes to “report.docx” in the office editor did not reach Orbit. The file is as it was before.',
+  })
+  const page = { kind: 'office_save_failed', page_id: 'page-1', office_file_name: 'budget.xlsx' } as NotificationRecord
+  expect(notificationTarget(page)).toBe('/docs/page-1')
+  expect(isMention(task)).toBe(false)
+})
+
 test('an import notice opens its import and names how it ended', () => {
   const done = { kind: 'import_finished', import_source: 'linear', import_id: 'imp-1', import_status: 'completed' } as NotificationRecord
   expect(notificationTarget(done)).toBe('/tasks-import/linear/imp-1')

@@ -116,7 +116,7 @@ It must print `200`. If it does not, fix the address, the firewall or the Docker
 - The address of the edited file is not on the Document Server URL or the internal URL. Orbit answers 403. Check that people open the editor from the same address that is saved in Orbit.
 - The edited file is over `ORBIT_UPLOAD_MAX_FILE_BYTES`. Orbit answers 413.
 
-The file in Orbit is unchanged when a save fails.
+The file in Orbit is unchanged when a save fails. Orbit tells the person who edited last with a notification in their inbox, and the file shows **Last save failed** next to **Open in editor** until a later save works. The workspace audit log has an `office.save_failed` event.
 
 **After a backup restore, a file says "The file cannot be opened yet".** The file was edited after the backup, and the restore brought its earlier content back. The Document Server refuses such a file until Orbit gives it a new key, which happens when someone who can edit the file opens it. Ask one of them to open it once. For people who can edit, the file opens after a short reload.
 

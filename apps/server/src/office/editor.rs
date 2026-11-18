@@ -28,6 +28,10 @@ pub(super) fn editor_router() -> Router<OfficeState> {
     Router::new()
         .route("/api/v1/office/status", get(get_office_status))
         .route(
+            "/api/v1/office/save-failures",
+            get(super::failures::list_office_save_failures),
+        )
+        .route(
             "/api/v1/office/{kind}/{file_id}/config",
             get(get_office_editor_config),
         )
@@ -472,7 +476,7 @@ fn not_configured(instance: &str, request_id: Option<&Extension<RequestId>>) -> 
     )
 }
 
-fn internal(instance: &str, request_id: Option<&Extension<RequestId>>) -> ApiError {
+pub(super) fn internal(instance: &str, request_id: Option<&Extension<RequestId>>) -> ApiError {
     ApiError::new(
         StatusCode::INTERNAL_SERVER_ERROR,
         "internal_error",

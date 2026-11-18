@@ -1084,12 +1084,41 @@ async fn a_page_file_is_saved_and_a_failed_save_is_recorded() {
         .unwrap()
         .to_owned();
 
+    // The page is the owner's own. A member whom the Document Server names is not told about it.
+    let member = fixture.person("Member", Some("member")).await;
+    let member_id = fixture.user_id("Member").await;
+    let failed = json!({"key": key, "status": 3, "users": [member_id]});
+    let (status, answer) =
+        callback(&fixture.app, "page_file", id, &failed, Token::Body(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert!(fixture.save_failure_notices(&member).await.is_empty());
+    // The file is marked for who can read it.
+    assert_eq!(
+        fixture.save_failures(&fixture.owner_cookie).await,
+        [id.to_string()]
+    );
+    assert!(fixture.save_failures(&member).await.is_empty());
+
     let failed = json!({"key": key, "status": 3, "users": [fixture.owner_id.to_string()]});
     let (status, answer) =
         callback(&fixture.app, "page_file", id, &failed, Token::Body(SECRET)).await;
     assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
     assert_eq!(hits.load(Ordering::SeqCst), 0);
-    assert_eq!(fixture.audit_actions().await, ["office.save_failed"]);
+    assert_eq!(
+        fixture.audit_actions().await,
+        ["office.save_failed", "office.save_failed"]
+    );
+    // The notification names the file and leads to its page.
+    let notices = fixture.save_failure_notices(&fixture.owner_cookie).await;
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(notices[0]["office_file_name"], "budget.xlsx");
+    assert_eq!(notices[0]["task_id"], Value::Null);
+    let page_id: String = sqlx::query_scalar("SELECT page_id FROM page_files WHERE id = $1")
+        .bind(id.to_string())
+        .fetch_one(fixture.database.pool())
+        .await
+        .unwrap();
+    assert_eq!(notices[0]["page_id"], page_id.as_str());
 
     let saved = json!({
         "key": key,
@@ -1107,6 +1136,227 @@ async fn a_page_file_is_saved_and_a_failed_save_is_recorded() {
     let url = body["config"]["document"]["url"].as_str().unwrap();
     assert_eq!(download(&fixture.app, url, None).await.1, b"edited sheet");
     assert_eq!(fixture.versions(id).await.len(), 1);
+    // The save that worked takes the mark away.
+    assert!(
+        fixture
+            .save_failures(&fixture.owner_cookie)
+            .await
+            .is_empty()
+    );
+}
+
+impl Fixture {
+    async fn user_id(&self, name: &str) -> String {
+        sqlx::query_scalar("SELECT id FROM users WHERE display_name = $1")
+            .bind(name)
+            .fetch_one(self.database.pool())
+            .await
+            .unwrap()
+    }
+
+    /// The ids of the files that `cookie` sees as "last save failed".
+    async fn save_failures(&self, cookie: &str) -> Vec<String> {
+        let request = Request::builder()
+            .uri("/api/v1/office/save-failures")
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = send(&self.app, request).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["file_id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// The `office_save_failed` notifications in the inbox of `cookie`.
+    async fn save_failure_notices(&self, cookie: &str) -> Vec<Value> {
+        let request = Request::builder()
+            .uri(format!(
+                "/api/v1/workspaces/{}/notifications",
+                self.workspace_id
+            ))
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap();
+        let (status, body) = send(&self.app, request).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|notice| notice["kind"] == "office_save_failed")
+            .cloned()
+            .collect()
+    }
+
+    /// Forgets the failed saves so far, so the next one tells the person again.
+    async fn forget_save_failures(&self) {
+        for table in ["notifications", "office_save_failures"] {
+            sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+                .execute(self.database.pool())
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_failed_save_marks_the_file_and_tells_the_person_who_edited_last() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, _) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let member = fixture.person("Member", Some("member")).await;
+    let member_id = fixture.user_id("Member").await;
+    let outsider = fixture.person("Outsider", None).await;
+    let outsider_id = fixture.user_id("Outsider").await;
+    let id = fixture.attachment("report.docx", b"first bytes").await;
+    let key = fixture.key_of_attachment(id).await;
+    let good = format!("{server}/cache/out.docx");
+    let app = &fixture.app;
+
+    // The Document Server could not save: when everyone closed the file (3), and while people
+    // still edit (7).
+    let (status, answer) = callback(
+        app,
+        "attachment",
+        id,
+        &json!({"key": key, "status": 3, "users": [member_id]}),
+        Token::Body(SECRET),
+    )
+    .await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(fixture.save_failures(&member).await, [id.to_string()]);
+    assert_eq!(
+        fixture.save_failures(&fixture.owner_cookie).await,
+        [id.to_string()]
+    );
+    // Who is not in the workspace learns nothing.
+    assert!(fixture.save_failures(&outsider).await.is_empty());
+    let notices = fixture.save_failure_notices(&member).await;
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert_eq!(notices[0]["office_file_name"], "report.docx");
+    assert_eq!(notices[0]["task_id"], fixture.task_id.to_string().as_str());
+    assert_eq!(notices[0]["page_id"], Value::Null);
+    assert_eq!(notices[0]["read_at"], Value::Null);
+    // Only the person who edited last is told.
+    assert!(
+        fixture
+            .save_failure_notices(&fixture.owner_cookie)
+            .await
+            .is_empty()
+    );
+    // The Document Server repeats itself: the person is told once.
+    let (status, _) = callback(
+        app,
+        "attachment",
+        id,
+        &json!({"key": key, "status": 7, "users": [member_id]}),
+        Token::Header(SECRET),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fixture.save_failure_notices(&member).await.len(), 1);
+    assert_eq!(fixture.save_failures(&member).await, [id.to_string()]);
+
+    // Orbit could not take the saved file: its address is not on the Document Server, the
+    // Document Server does not hand it over, it has another format, or there is no address.
+    let cases = [
+        (
+            json!({"url": "http://169.254.169.254/out.docx"}),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            json!({"url": format!("{server}/cache/moved")}),
+            StatusCode::BAD_GATEWAY,
+        ),
+        (
+            json!({"url": format!("{server}/cache/none")}),
+            StatusCode::BAD_GATEWAY,
+        ),
+        (
+            json!({"url": good, "filetype": "pdf"}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (json!({}), StatusCode::BAD_REQUEST),
+    ];
+    for (fields, expected) in cases {
+        fixture.forget_save_failures().await;
+        let mut body = json!({"key": key, "status": 2, "users": [member_id]});
+        for (name, value) in fields.as_object().unwrap() {
+            body[name] = value.clone();
+        }
+        let (status, answer) = callback(app, "attachment", id, &body, Token::Body(SECRET)).await;
+        assert_eq!((status, answer), (expected, json!({"error": 1})), "{body}");
+        assert_eq!(
+            fixture.save_failures(&member).await,
+            [id.to_string()],
+            "{body}"
+        );
+        let notices = fixture.save_failure_notices(&member).await;
+        assert_eq!(notices.len(), 1, "{body}");
+        assert_eq!(notices[0]["office_file_name"], "report.docx");
+    }
+    assert_eq!(fixture.bytes_of_attachment(id).await, b"first bytes");
+
+    // A person the Document Server names who is no account, or no member: the file is marked,
+    // nobody is told.
+    for unknown in [Id::new_v7().to_string(), outsider_id] {
+        fixture.forget_save_failures().await;
+        let (status, _) = callback(
+            app,
+            "attachment",
+            id,
+            &json!({"key": key, "status": 3, "users": [unknown]}),
+            Token::Body(SECRET),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fixture.save_failures(&member).await, [id.to_string()]);
+        let told: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notifications")
+            .fetch_one(fixture.database.pool())
+            .await
+            .unwrap();
+        assert_eq!(told, 0);
+    }
+
+    // A callback that the Document Server did not sign marks nothing.
+    fixture.forget_save_failures().await;
+    let failed = json!({"key": key, "status": 3, "users": [member_id]});
+    let (status, _) = callback(app, "attachment", id, &failed, Token::Body("another")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(fixture.save_failures(&member).await.is_empty());
+
+    // The next save that works takes the mark away. The notification stays in the inbox.
+    let (status, _) = callback(app, "attachment", id, &failed, Token::Body(SECRET)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fixture.save_failures(&member).await, [id.to_string()]);
+    let saved =
+        json!({"key": key, "status": 2, "url": good, "filetype": "docx", "users": [member_id]});
+    let (status, answer) = callback(app, "attachment", id, &saved, Token::Body(SECRET)).await;
+    assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+    assert_eq!(fixture.bytes_of_attachment(id).await, b"edited bytes");
+    assert!(fixture.save_failures(&member).await.is_empty());
+    assert_eq!(fixture.save_failure_notices(&member).await.len(), 1);
+
+    // The mark goes with the file.
+    let key = fixture.key_of_attachment(id).await;
+    let failed = json!({"key": key, "status": 3, "users": [member_id]});
+    let (status, _) = callback(app, "attachment", id, &failed, Token::Body(SECRET)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(fixture.save_failures(&member).await, [id.to_string()]);
+    sqlx::query("DELETE FROM attachment_references WHERE id = $1")
+        .bind(id.to_string())
+        .execute(fixture.database.pool())
+        .await
+        .unwrap();
+    let marks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM office_save_failures")
+        .fetch_one(fixture.database.pool())
+        .await
+        .unwrap();
+    assert_eq!(marks, 0);
 }
 
 #[tokio::test]
@@ -1232,7 +1482,16 @@ async fn a_callback_that_is_not_the_document_servers_stores_nothing() {
         let (_, blob) = fixture.blob_of_attachment(file).await;
         assert_eq!(blob, hex_sha256(bytes));
     }
-    assert!(fixture.audit_actions().await.is_empty());
+    // The refused saves that the Document Server signed are failed saves: 3 foreign addresses, a
+    // redirect, a read-only format, another format and no address. The others leave no trace.
+    let audited = fixture.audit_actions().await;
+    assert_eq!(audited.len(), 7, "{audited:?}");
+    assert!(audited.iter().all(|action| action == "office.save_failed"));
+    let mut marked = fixture.save_failures(&fixture.owner_cookie).await;
+    marked.sort();
+    let mut expected = [id.to_string(), legacy.to_string()];
+    expected.sort();
+    assert_eq!(marked, expected);
 
     fixture.save_settings_with(false, Some(&server)).await;
     let (status, answer) = callback(app, "attachment", id, &body, Token::Body(SECRET)).await;

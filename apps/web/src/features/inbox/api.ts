@@ -127,7 +127,10 @@ const IMPORTS: Record<string, { name: string; page: string }> = {
   obsidian: { name: 'Obsidian', page: '/docs/import/obsidian' },
 }
 
-/** Where a notification leads: the task, the page with the comment thread open, the page at the mention, the chat message, or the import. */
+/**
+ * Where a notification leads: the task, the page with the comment thread open, the page at the mention, the chat
+ * message, the import, or the task or page of a file that the office editor could not save.
+ */
 export function notificationTarget(notification: NotificationRecord): string | null {
   if (notification.kind === 'import_finished') {
     const source = IMPORTS[notification.import_source ?? '']
@@ -137,6 +140,7 @@ export function notificationTarget(notification: NotificationRecord): string | n
     const message = notification.chat_message_id ? `?m=${encodeURIComponent(notification.chat_message_id)}` : ''
     return `/chat/${notification.chat_conversation_id}${message}`
   }
+  if (notification.kind === 'office_save_failed' && notification.page_id) return `/docs/${notification.page_id}`
   if (notification.kind === 'page_mentioned' && notification.page_id) {
     const block = notification.page_block_id ? `?block=${encodeURIComponent(notification.page_block_id)}` : ''
     return `/docs/${notification.page_id}${block}`
@@ -162,6 +166,9 @@ export function notificationCopy(notification: NotificationRecord, pageTitle?: s
     return notification.import_status === 'failed'
       ? { title: `${name} import failed`, body: 'Open the import to see what happened.' }
       : { title: `${name} import complete`, body: 'Open the import to see what was imported.' }
+  }
+  if (notification.kind === 'office_save_failed') {
+    return { title: 'A file was not saved', body: `Your changes to “${notification.office_file_name ?? 'a file'}” in the office editor did not reach Orbit. The file is as it was before.` }
   }
   if (notification.kind === 'chat_mentioned') {
     return { title: `${actorName ?? 'Someone'} mentioned you in chat`, body: 'Open the conversation to see the message.' }

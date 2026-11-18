@@ -25,6 +25,7 @@ export const queryKeys = {
   adminOfficeSettings: ['admin', 'office-settings'] as const,
   officeEditorConfig: ['office', 'editor-config'] as const,
   officeStatus: ['office', 'status'] as const,
+  officeSaveFailures: ['office', 'save-failures'] as const,
   adminJobLimits: ['admin', 'job-limits'] as const,
   /** The Admin mail page (switch and health card). Workspace mail keys are `mailKeys` in `features/mail/api/keys`. */
   adminMail: ['admin', 'mail'] as const,

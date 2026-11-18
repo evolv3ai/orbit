@@ -113,6 +113,12 @@ impl OfficeFileVersions {
         let blob = finalization
             .finalize_bytes_in_transaction(&mut tx, workspace_id, bytes, now)
             .await?;
+        // The file holds what the editor saved: an earlier failed save no longer counts.
+        sqlx::query("DELETE FROM office_save_failures WHERE file_kind = $1 AND file_id = $2")
+            .bind(kind.as_str())
+            .bind(file_id.to_string())
+            .execute(&mut *tx)
+            .await?;
         if blob.id == previous_blob_id {
             tx.commit().await?;
             return Ok(SaveOutcome::Unchanged);

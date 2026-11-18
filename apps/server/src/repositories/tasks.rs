@@ -281,9 +281,11 @@ pub struct NotificationRecord {
     pub actor_user_id: Id,
     /// `task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task
     /// description), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or
-    /// `chat_mentioned` (a chat message) or `import_finished` (a long import ended).
+    /// `chat_mentioned` (a chat message) or `import_finished` (a long import ended) or
+    /// `office_save_failed` (a save from the office editor failed; a feature of the
+    /// `evolv3ai/orbit` fork).
     pub kind: String,
-    /// Set for task notifications.
+    /// Set for task notifications, and for an `office_save_failed` one of a task's file.
     #[schema(value_type = Option<String>)]
     pub task_id: Option<Id>,
     /// The task comment of a `comment_mentioned` notification.
@@ -312,6 +314,9 @@ pub struct NotificationRecord {
     pub import_id: Option<Id>,
     /// How the import ended: `completed` or `failed`.
     pub import_status: Option<String>,
+    /// The name of the file of an `office_save_failed` notification. The file is on the task
+    /// (`task_id`) or the page (`page_id`).
+    pub office_file_name: Option<String>,
     #[schema(value_type = Option<String>, format = DateTime)]
     pub read_at: Option<TimestampMillis>,
     #[schema(value_type = String, format = DateTime)]
@@ -3870,7 +3875,7 @@ impl TaskRepository {
         let after = cursor_i64_pair(cursor, &fingerprint)?;
         let mut query = SqlBuilder::new(
             "SELECT id, workspace_id, recipient_user_id, actor_user_id, kind, task_id, comment_id, page_id, \
-             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, read_at, created_at FROM notifications WHERE workspace_id = ",
+             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, read_at, created_at FROM notifications WHERE workspace_id = ",
         );
         query
             .push_bind(workspace_id.to_string())
@@ -3950,7 +3955,7 @@ impl TaskRepository {
         .await?;
         let row = sqlx::query(
             "SELECT id, workspace_id, recipient_user_id, actor_user_id, kind, task_id, comment_id, page_id, \
-             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, read_at, created_at FROM notifications WHERE id = $1 AND workspace_id = $2 AND recipient_user_id = $3",
+             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, read_at, created_at FROM notifications WHERE id = $1 AND workspace_id = $2 AND recipient_user_id = $3",
         )
         .bind(notification_id.to_string())
         .bind(workspace_id.to_string())
@@ -5983,6 +5988,7 @@ fn notification_from_row(row: sqlx::any::AnyRow) -> Result<NotificationRecord, T
         import_source: row.get("import_source"),
         import_id: optional_id(row.get("import_id"))?,
         import_status: row.get("import_status"),
+        office_file_name: row.get("office_file_name"),
         read_at: row
             .get::<Option<i64>, _>("read_at")
             .map(TimestampMillis::from_millis),
