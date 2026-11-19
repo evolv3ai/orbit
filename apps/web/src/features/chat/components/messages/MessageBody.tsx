@@ -1,4 +1,5 @@
 import { Fragment, useContext, useState, type ReactNode } from 'react'
+import { OfficeLinkContext } from '@orbit/editor/officeLink'
 import { Attachments } from '@/components/common/Attachments'
 import { Button } from '@/components/ui/button'
 import { CustomEmojiContext } from '@/lib/customEmojiContext'
@@ -43,6 +44,8 @@ export function MessageBody({ message }: { message: Message }) {
   const people = useChatPeople()
   const { renderLink, taskKeys } = useChatHost()
   const customEmoji = useContext(CustomEmojiContext)
+  // "Open in editor" on office files, while office editing is on. A chat file opens read-only.
+  const officeHref = useContext(OfficeLinkContext)
   const [expanded, setExpanded] = useState(false)
   const [stickerGone, setStickerGone] = useState(false)
 
@@ -135,7 +138,7 @@ export function MessageBody({ message }: { message: Message }) {
           Sticker was deleted
         </p>
       ) : null}
-      <Attachments attachments={message.attachments} hasTextContent={text !== ''} />
+      <Attachments attachments={message.attachments} hasTextContent={text !== ''} editorHref={officeHref ?? undefined} />
       <LinkCards body={linkBody} />
     </div>
   )

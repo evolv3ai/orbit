@@ -130,8 +130,11 @@ As built (OO-8, `apps/server/src/office/editor.rs`, `files.rs` and `jwt.rs`):
 
 - The answer is `{ "document_server_url", "config" }`. The page loads `api.js` from the first and
   passes the second to `DocsAPI.DocEditor` as it is.
-- Kinds: `attachment` and `page_file`. **`chat_file` is not built yet** (404): its access check is
-  private to the chat repository.
+- Kinds: `attachment`, `page_file` and `chat_file`. A chat file (OO-26) is always view mode and
+  its config has no `callbackUrl`; the callback route answers 404 for the kind, and
+  `OfficeFileVersions::save` has no table for it. Its access is the rule of the chat download
+  (`repositories::chat::can_open_chat_file`, one SQL fragment with `download_file`). A file that
+  no message has yet does not open (404).
 - Access reuses `AttachmentRepository::authorize_task`, `require_comment_editor` and
   `PageFileRepository::authorize_upload`. A file of a comment is read-only for the people who may
   not edit the comment. Guests get 404, as on the download routes.
@@ -358,7 +361,9 @@ As built (OO-12):
   - the file cards under a task and under a comment (`Attachments`, prop `editorHref`).
 - The file and its kind come from the download address of the file
   (`features/office/officeFiles.ts`).
-- **Not built: chat files** (the server has no `chat_file` kind, see 4.3) and mail attachments.
+- Chat files (OO-26): the file cards of a chat message (`MessageBody`) take the address from the
+  same context. The files in the composer, not sent yet, have no link.
+- **Not built: mail attachments.**
 - The mobile app does not provide the context, so its file blocks are unchanged (section 6).
 - The link in file blocks has no automated test of the block itself. It was seen working in a
   browser on 2026-11-16.
@@ -491,6 +496,6 @@ As built (OO-6):
 ## 11. Open questions
 
 1. Edition: is Community Edition's connection cap acceptable, or is a paid edition planned?
-2. Chat files: view only in Phase 1 (as proposed), or editable?
+2. Chat files: view only in Phase 1 (as proposed), or editable? As built (OO-26): view only.
 3. Version retention: 20 per file, or a workspace setting?
 4. Document Server hostname on Coolify: its own subdomain (proposed) or a path under Orbit's?

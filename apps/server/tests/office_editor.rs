@@ -14,6 +14,7 @@ use orbit_platform::{
 };
 use orbit_server::attachment_routes::{AttachmentState, attachment_router};
 use orbit_server::auth_routes::CookieMode;
+use orbit_server::chat_routes::{ChatState, chat_router};
 use orbit_server::office::jwt;
 use orbit_server::office::routes::{OfficeState, office_router};
 use orbit_server::office::token::OfficeTokens;
@@ -84,6 +85,11 @@ impl Fixture {
         );
         let app = task_router(TaskState::new(Arc::clone(&identity), CookieMode::secure()))
             .merge(attachment_router(AttachmentState::new(
+                Arc::clone(&identity),
+                uploads.clone(),
+                CookieMode::secure(),
+            )))
+            .merge(chat_router(ChatState::new(
                 Arc::clone(&identity),
                 uploads.clone(),
                 CookieMode::secure(),
@@ -751,15 +757,220 @@ async fn only_people_who_can_read_the_file_get_a_config() {
     let cookie = &fixture.owner_cookie;
     for (kind, file) in [
         ("attachment", Id::new_v7().to_string()),
-        // The id of the other kind.
+        // The id of another kind.
         ("page_file", id.clone()),
         ("chat_file", id.clone()),
+        ("mail_file", id.clone()),
         ("attachment", "not-an-id".to_owned()),
     ] {
         let (status, body) = fixture.config(cookie, kind, &file, "").await;
         assert_eq!(status, StatusCode::NOT_FOUND, "{kind} {file}: {body}");
         assert_eq!(body["code"], "office_file_not_found");
     }
+}
+
+impl Fixture {
+    /// A private channel of the owner's with `members` (user ids). Returns its id.
+    async fn private_channel(&self, members: &[String]) -> String {
+        let (status, written) = send(
+            &self.app,
+            json_request(
+                "POST",
+                &format!(
+                    "/api/v1/workspaces/{}/chat/conversations",
+                    self.workspace_id
+                ),
+                &self.owner_cookie,
+                &json!({"name": "secret", "kind": "private", "member_ids": members}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{written}");
+        written["result"]["id"].as_str().unwrap().to_owned()
+    }
+
+    /// Uploads a file for a chat message as `cookie`. Returns its id; no message has it yet.
+    async fn chat_upload(&self, cookie: &str, name: &str, bytes: &[u8]) -> Id {
+        let (status, file) = send(
+            &self.app,
+            multipart_request(
+                &format!("/api/v1/workspaces/{}/chat/files", self.workspace_id),
+                cookie,
+                name,
+                bytes,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{file}");
+        file["id"].as_str().unwrap().parse().unwrap()
+    }
+
+    /// Sends a message with the uploaded file to the conversation, as `cookie`.
+    async fn chat_send(&self, cookie: &str, conversation: &str, file: Id) {
+        let (status, sent) = send(
+            &self.app,
+            json_request(
+                "POST",
+                &format!(
+                    "/api/v1/workspaces/{}/chat/conversations/{conversation}/messages",
+                    self.workspace_id
+                ),
+                cookie,
+                &json!({"body": "", "nonce": file.to_string(), "file_ids": [file]}),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{sent}");
+    }
+}
+
+#[tokio::test]
+async fn a_chat_file_opens_read_only_for_the_people_of_its_conversation() {
+    let fixture = Fixture::new().await;
+    let member = fixture.person("Ada", Some("member")).await;
+    let other = fixture.person("Bob", Some("member")).await;
+    let outsider = fixture.person("Outsider", None).await;
+    let channel = fixture
+        .private_channel(&[fixture.user_id("Ada").await])
+        .await;
+    let file = fixture
+        .chat_upload(&fixture.owner_cookie, "report.docx", b"sent bytes")
+        .await;
+    let id = file.to_string();
+
+    // Until a message has the file, the editor does not open it, also not for its uploader.
+    let (status, body) = fixture
+        .config(&fixture.owner_cookie, "chat_file", &id, "")
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    fixture
+        .chat_send(&fixture.owner_cookie, &channel, file)
+        .await;
+
+    // Everyone in the conversation views it, whoever sent it. Nobody edits: a message is a
+    // record of what was sent.
+    let mut keys = Vec::new();
+    for cookie in [&fixture.owner_cookie, &member] {
+        let (status, body) = fixture.config(cookie, "chat_file", &id, "").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let config = &body["config"];
+        assert_eq!(config["documentType"], "word");
+        assert_eq!(config["document"]["title"], "report.docx");
+        assert_eq!(config["document"]["permissions"]["edit"], false);
+        assert_eq!(config["editorConfig"]["mode"], "view");
+        // The Document Server has nowhere to send a save.
+        assert_eq!(config["editorConfig"].get("callbackUrl"), None);
+        let claims = jwt::verify(
+            config["token"].as_str().unwrap(),
+            SECRET,
+            TimestampMillis::now(),
+        )
+        .unwrap();
+        assert_eq!(claims["editorConfig"]["mode"], "view");
+        assert_eq!(claims["document"]["permissions"]["edit"], false);
+        keys.push(config["document"]["key"].as_str().unwrap().to_owned());
+    }
+    assert_eq!(keys[0], keys[1]);
+
+    // A member of the workspace who is not in the conversation, and someone outside the
+    // workspace, learn nothing about the file.
+    for cookie in [&other, &outsider] {
+        let (status, body) = fixture.config(cookie, "chat_file", &id, "").await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(body["code"], "office_file_not_found");
+    }
+    // The id names a chat file only.
+    for kind in ["attachment", "page_file"] {
+        let (status, _) = fixture.config(&fixture.owner_cookie, kind, &id, "").await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{kind}");
+    }
+
+    // The Document Server downloads the bytes from the address of the config.
+    let (_, body) = fixture.config(&member, "chat_file", &id, "").await;
+    let url = body["config"]["document"]["url"].as_str().unwrap();
+    assert!(url.starts_with(&format!(
+        "http://orbit:8080/api/v1/office/chat_file/{id}/download?t="
+    )));
+    let (status, bytes) = download(&fixture.app, url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"sent bytes");
+    // A token of a chat file is no token of another kind.
+    let (status, _) = download(
+        &fixture.app,
+        &url.replace("/chat_file/", "/attachment/"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Nobody renews the key of a file that nobody edits.
+    let (status, body) = send(
+        &fixture.app,
+        json_request(
+            "POST",
+            &format!("/api/v1/office/chat_file/{id}/key"),
+            &fixture.owner_cookie,
+            &json!({"outdated_key": keys[0]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+async fn the_callback_route_refuses_a_chat_file() {
+    let fixture = Fixture::new().await;
+    let channel = fixture.private_channel(&[]).await;
+    let file = fixture
+        .chat_upload(&fixture.owner_cookie, "report.docx", b"sent bytes")
+        .await;
+    fixture
+        .chat_send(&fixture.owner_cookie, &channel, file)
+        .await;
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "chat_file", &file.to_string(), "")
+        .await;
+    let key = body["config"]["document"]["key"].as_str().unwrap();
+    let (edited, hits) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&edited)).await;
+
+    // A save that the Document Server signed is refused, and the edited file is not fetched.
+    for status in [1, 2, 6] {
+        let (answer, body) = callback(
+            &fixture.app,
+            "chat_file",
+            file,
+            &json!({
+                "key": key, "status": status, "url": format!("{edited}/edited.docx"),
+                "users": [fixture.owner_id.to_string()],
+            }),
+            Token::Body(SECRET),
+        )
+        .await;
+        assert_eq!(answer, StatusCode::NOT_FOUND, "{status}: {body}");
+        assert_eq!(body, json!({"error": 1}));
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+
+    // The message still has what was sent, and the file has no versions.
+    let (_, body) = fixture
+        .config(&fixture.owner_cookie, "chat_file", &file.to_string(), "")
+        .await;
+    assert_eq!(body["config"]["document"]["key"], key);
+    let url = body["config"]["document"]["url"].as_str().unwrap();
+    assert_eq!(download(&fixture.app, url, None).await.1, b"sent bytes");
+    let versions: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM office_file_versions WHERE file_id = $1")
+            .bind(file.to_string())
+            .fetch_one(fixture.database.pool())
+            .await
+            .unwrap();
+    assert_eq!(versions, 0);
+    // The library that saves has no table for the kind either.
+    let saved = OfficeFileVersions::new((*fixture.database).clone(), fixture.uploads.clone())
+        .save(OfficeFileKind::ChatFile, file, b"edited bytes", None)
+        .await;
+    assert!(saved.is_err(), "{saved:?}");
 }
 
 #[tokio::test]

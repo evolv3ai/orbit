@@ -1962,9 +1962,10 @@ export const getOfficeStatus = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
- * The config that opens a file of a task (`attachment`) or of a Docs page (`page_file`) in the
- * office editor. The person edits when they may change the file and the editor saves its format
- * (`docx`, `xlsx`, `pptx`); otherwise the file opens read-only.
+ * The config that opens a file of a task (`attachment`), of a Docs page (`page_file`) or of a
+ * chat message (`chat_file`) in the office editor. The person edits when they may change the
+ * file and the editor saves its format (`docx`, `xlsx`, `pptx`); otherwise the file opens
+ * read-only. A file of a chat message always opens read-only.
  */
 export const getOfficeEditorConfig = <ThrowOnError extends boolean = false>(options: Options<GetOfficeEditorConfigData, ThrowOnError>): RequestResult<GetOfficeEditorConfigResponses, GetOfficeEditorConfigErrors, ThrowOnError> => (options.client ?? client).get<GetOfficeEditorConfigResponses, GetOfficeEditorConfigErrors, ThrowOnError>({
     security: [{

@@ -120,8 +120,9 @@ async fn handle(
     request_id: &str,
 ) -> Result<(), Refusal> {
     let database = state.identity.database();
+    // Only the kinds the editor saves have a callback: a chat file is view only.
     let (Some(kind), Ok(file_id), Some(app_key)) = (
-        OfficeFileKind::parse(kind),
+        OfficeFileKind::parse(kind).filter(|kind| kind.saves()),
         file_id.parse::<Id>(),
         state.app_key.as_ref(),
     ) else {

@@ -1,6 +1,7 @@
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 /** The download paths the server hands out for the files that the office editor opens. */
 const PAGE_FILE = new RegExp(`^/api/v1/workspaces/${UUID}/pages/${UUID}/files/(${UUID})$`)
+const CHAT_FILE = new RegExp(`^/api/v1/workspaces/${UUID}/chat/files/(${UUID})$`)
 const TASK_ATTACHMENT = new RegExp(`^/api/v1/workspaces/${UUID}/tasks/${UUID}/(?:comments/${UUID}/)?attachments/(${UUID})/download$`)
 
 /** The formats the office editor opens (the server's `office_format`): the Office and OpenDocument ones, and PDF. */
@@ -12,8 +13,11 @@ export function isOfficeFileName(name: string) {
   return dot > 0 && EXTENSIONS.has(name.slice(dot + 1).toLowerCase())
 }
 
-/** The file that a download address of Orbit names, when it is a file of a task, a comment or a Docs page. */
-export function officeFileOfUrl(url: string): { kind: 'attachment' | 'page_file'; id: string } | null {
+/**
+ * The file that a download address of Orbit names, when it is a file of a task, a comment, a Docs page or a chat
+ * message.
+ */
+export function officeFileOfUrl(url: string): { kind: 'attachment' | 'page_file' | 'chat_file'; id: string } | null {
   let path: string
   try {
     const parsed = new URL(url, window.location.origin)
@@ -24,6 +28,8 @@ export function officeFileOfUrl(url: string): { kind: 'attachment' | 'page_file'
   }
   const page = PAGE_FILE.exec(path)
   if (page) return { kind: 'page_file', id: page[1] }
+  const chat = CHAT_FILE.exec(path)
+  if (chat) return { kind: 'chat_file', id: chat[1] }
   const attachment = TASK_ATTACHMENT.exec(path)
   return attachment ? { kind: 'attachment', id: attachment[1] } : null
 }

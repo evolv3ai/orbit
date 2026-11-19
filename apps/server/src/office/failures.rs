@@ -40,11 +40,14 @@ pub async fn record(
     .bind(now.as_millis())
     .execute(&mut *transaction)
     .await?;
-    if let Some(editor) = editor {
-        let (task_id, page_id) = match file.parent {
-            OfficeFileParent::Task { task_id, .. } => (Some(task_id.to_string()), None),
-            OfficeFileParent::Page { page_id } => (None, Some(page_id.to_string())),
-        };
+    // A notification links to the task or the page of the file.
+    let linked = match file.parent {
+        OfficeFileParent::Task { task_id, .. } => Some((Some(task_id.to_string()), None)),
+        OfficeFileParent::Page { page_id } => Some((None, Some(page_id.to_string()))),
+        // Never saved, so never here.
+        OfficeFileParent::Chat { .. } => None,
+    };
+    if let (Some(editor), Some((task_id, page_id))) = (editor, linked) {
         let dedupe = format!("office_save_failed:{}:{editor}:", file.id);
         sqlx::query(
             "INSERT INTO notifications (id, workspace_id, recipient_user_id, actor_user_id, kind, \

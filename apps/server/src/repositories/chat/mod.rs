@@ -43,6 +43,7 @@ pub use conversations::{
     ChannelCreate, ChannelUpdate, MAX_GUEST_CHANNELS, join_invited_channels, require_guest_channels,
 };
 pub use emoji::{CustomEmojiImage, CustomEmojiRecord, EMOJI_MAX_BYTES};
+pub use files::can_open_chat_file;
 pub use interactions::{Click, ResponseTarget};
 pub use messages::BotPost;
 pub use messages::{ForwardInput, MessageCursor, SendInput};

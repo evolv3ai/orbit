@@ -107,10 +107,11 @@ pub(crate) struct OfficeEditorQuery {
     back: Option<String>,
 }
 
-/// The config that opens a file of a task (`attachment`) or of a Docs page (`page_file`) in the
-/// office editor. The person edits when they may change the file and the editor saves its format
-/// (`docx`, `xlsx`, `pptx`); otherwise the file opens read-only.
-#[utoipa::path(get, path = "/api/v1/office/{kind}/{file_id}/config", params(("kind" = String, Path, description = "`attachment` or `page_file`"), ("file_id" = String, Path), OfficeEditorQuery), responses((status = 200, body = OfficeEditorView)))]
+/// The config that opens a file of a task (`attachment`), of a Docs page (`page_file`) or of a
+/// chat message (`chat_file`) in the office editor. The person edits when they may change the
+/// file and the editor saves its format (`docx`, `xlsx`, `pptx`); otherwise the file opens
+/// read-only. A file of a chat message always opens read-only.
+#[utoipa::path(get, path = "/api/v1/office/{kind}/{file_id}/config", params(("kind" = String, Path, description = "`attachment`, `page_file` or `chat_file`"), ("file_id" = String, Path), OfficeEditorQuery), responses((status = 200, body = OfficeEditorView)))]
 pub(crate) async fn get_office_editor_config(
     State(state): State<OfficeState>,
     Path((kind, file_id)): Path<(String, String)>,
@@ -325,6 +326,7 @@ pub(crate) async fn download_office_file(
         .ok_or_else(|| not_found(&instance, request_id))?;
     // The Document Server signs its requests when it is set up to. A signature that is there
     // must be its own.
+    let signed = headers.contains_key(AUTHORIZATION);
     if let Some(authorization) = headers.get(AUTHORIZATION) {
         let secret = settings.jwt_secret(app_key).ok_or_else(|| {
             internal(&instance, request_id).cause("the office secret cannot be decrypted")
@@ -341,6 +343,12 @@ pub(crate) async fn download_office_file(
         .map_err(|error| internal(&instance, request_id).cause(error))?
         .filter(|file| file.blob_id == blob_id && !file.deleted)
         .ok_or_else(|| not_found(&instance, request_id))?;
+    tracing::info!(
+        kind = file.kind.as_str(),
+        file_id = %file.id,
+        signed,
+        "the office Document Server downloads a file"
+    );
     let download = state
         .uploads
         .download(|| async {
@@ -390,10 +398,13 @@ fn editor_config(input: &EditorConfig<'_>) -> Value {
         file.id
     );
     let mut editor = json!({
-        "callbackUrl": format!("{base}/callback"),
         "mode": if input.edit { "edit" } else { "view" },
         "user": {"id": input.user_id.to_string(), "name": input.user_name},
     });
+    // A kind that is never saved has no callback route.
+    if file.kind.saves() {
+        editor["callbackUrl"] = json!(format!("{base}/callback"));
+    }
     if let Some(lang) = input.query.lang.as_deref().filter(|lang| valid_lang(lang)) {
         editor["lang"] = json!(lang);
     }

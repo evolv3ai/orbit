@@ -20861,13 +20861,13 @@
         "tags": [
           "crate::office::editor"
         ],
-        "summary": "The config that opens a file of a task (`attachment`) or of a Docs page (`page_file`) in the\noffice editor. The person edits when they may change the file and the editor saves its format\n(`docx`, `xlsx`, `pptx`); otherwise the file opens read-only.",
+        "summary": "The config that opens a file of a task (`attachment`), of a Docs page (`page_file`) or of a\nchat message (`chat_file`) in the office editor. The person edits when they may change the\nfile and the editor saves its format (`docx`, `xlsx`, `pptx`); otherwise the file opens\nread-only. A file of a chat message always opens read-only.",
         "operationId": "get_office_editor_config",
         "parameters": [
           {
             "name": "kind",
             "in": "path",
-            "description": "`attachment` or `page_file`",
+            "description": "`attachment`, `page_file` or `chat_file`",
             "required": true,
             "schema": {
               "type": "string"

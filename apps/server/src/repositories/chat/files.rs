@@ -5,7 +5,9 @@
 //! conversation.
 
 use orbit_platform::Row;
-use orbit_platform::{AuthorizedAttachment, BlobDownload, Flag, Id, StagedUpload, UploadError};
+use orbit_platform::{
+    AuthorizedAttachment, BlobDownload, Database, Flag, Id, StagedUpload, UploadError,
+};
 use sqlx::AnyConnection;
 use sqlx::any::AnyRow;
 
@@ -13,6 +15,46 @@ use super::{
     ChatError, ChatFileRecord, ChatRepository, MESSAGE_SELECT, MessageRecord, hydrate, id_list,
     in_ids, load_access, load_actor, parse_id, reachable_dm,
 };
+
+/// SQL from `FROM` on: the chat file `$2` of the workspace `$3` (`f`) and its blob (`b`), when
+/// the member `$1` can open it: its uploader while it waits for its message, then everyone who
+/// can read the conversation.
+fn openable_file() -> String {
+    format!(
+        "FROM chat_message_files f \
+         JOIN attachment_blobs b ON b.id = f.blob_id AND b.workspace_id = f.workspace_id \
+         JOIN workspaces w ON w.id = f.workspace_id AND w.deleted_at IS NULL \
+         JOIN memberships me ON me.workspace_id = f.workspace_id AND me.user_id = $1 \
+         LEFT JOIN chat_conversations c ON c.id = f.conversation_id \
+         WHERE f.id = $2 AND f.workspace_id = $3 AND ( \
+             (f.message_id IS NULL AND f.uploaded_by = me.user_id) \
+             OR (c.kind = 'public' AND me.role <> 'guest') \
+             OR (EXISTS (SELECT 1 FROM chat_members cm \
+                         WHERE cm.conversation_id = c.id AND cm.user_id = me.user_id) \
+                 AND {}))",
+        reachable_dm()
+    )
+}
+
+/// Whether `actor_id` can open the chat file, by the rule of its download
+/// (`ChatRepository::download_file`). The office editor asks before it shows a chat file.
+pub async fn can_open_chat_file(
+    database: &Database,
+    workspace_id: Id,
+    actor_id: Id,
+    file_id: Id,
+) -> Result<bool, sqlx::Error> {
+    let found = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT 1 AS found {}",
+        openable_file()
+    )))
+    .bind(actor_id.to_string())
+    .bind(file_id.to_string())
+    .bind(workspace_id.to_string())
+    .fetch_optional(database.pool())
+    .await?;
+    Ok(found.is_some())
+}
 
 /// Files of one message.
 pub(super) const MAX_MESSAGE_FILES: usize = 10;
@@ -197,18 +239,8 @@ impl ChatRepository {
         self.uploads
             .download(move || async move {
                 let row = sqlx::query(sqlx::AssertSqlSafe(format!(
-                    "SELECT b.storage_key, b.deleted_at, f.mime_type, f.file_name FROM chat_message_files f \
-                     JOIN attachment_blobs b ON b.id = f.blob_id AND b.workspace_id = f.workspace_id \
-                     JOIN workspaces w ON w.id = f.workspace_id AND w.deleted_at IS NULL \
-                     JOIN memberships me ON me.workspace_id = f.workspace_id AND me.user_id = $1 \
-                     LEFT JOIN chat_conversations c ON c.id = f.conversation_id \
-                     WHERE f.id = $2 AND f.workspace_id = $3 AND ( \
-                         (f.message_id IS NULL AND f.uploaded_by = me.user_id) \
-                         OR (c.kind = 'public' AND me.role <> 'guest') \
-                         OR (EXISTS (SELECT 1 FROM chat_members cm \
-                                     WHERE cm.conversation_id = c.id AND cm.user_id = me.user_id) \
-                             AND {}))",
-                    reachable_dm()
+                    "SELECT b.storage_key, b.deleted_at, f.mime_type, f.file_name {}",
+                    openable_file()
                 )))
                 .bind(actor_id.to_string())
                 .bind(file_id.to_string())

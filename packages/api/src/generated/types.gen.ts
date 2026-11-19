@@ -19341,7 +19341,7 @@ export type GetOfficeEditorConfigData = {
     };
     path: {
         /**
-         * `attachment` or `page_file`
+         * `attachment`, `page_file` or `chat_file`
          */
         kind: string;
         file_id: string;

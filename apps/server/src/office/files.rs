@@ -1,12 +1,14 @@
 //! The files the editor opens: where a file is, which bytes it holds now, and what a person may do
-//! with it. Access follows the task or the Docs page of the file, through the checks that the
-//! attachment and page file routes use: this module adds no rule of its own.
+//! with it. Access follows the task, the Docs page or the chat conversation of the file, through
+//! the checks that the attachment, page file and chat file routes use: this module adds no rule
+//! of its own.
 
 use orbit_platform::{Database, Id, Row, TimestampMillis, UploadService};
 use thiserror::Error;
 
 use super::versions::OfficeFileKind;
 use crate::repositories::attachments::{AttachmentRepository, AttachmentRepositoryError};
+use crate::repositories::chat::can_open_chat_file;
 use crate::repositories::identity::AuthenticatedSession;
 use crate::repositories::page_files::{PageFileError, PageFileRepository};
 
@@ -14,7 +16,7 @@ impl OfficeFileKind {
     /// The kind that the `{kind}` of an office route names.
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
-        [Self::Attachment, Self::PageFile]
+        [Self::Attachment, Self::PageFile, Self::ChatFile]
             .into_iter()
             .find(|kind| kind.as_str() == value)
     }
@@ -30,6 +32,10 @@ pub enum OfficeFileParent {
     },
     Page {
         page_id: Id,
+    },
+    /// A message of a chat conversation.
+    Chat {
+        conversation_id: Id,
     },
 }
 
@@ -108,6 +114,14 @@ pub async fn find(
              FROM page_files f JOIN attachment_blobs b ON b.id = f.blob_id \
              AND b.workspace_id = f.workspace_id WHERE f.id = $1"
         }
+        // A file that waits for its message is its uploader's alone: the editor does not open it.
+        OfficeFileKind::ChatFile => {
+            "SELECT f.workspace_id AS workspace_id, f.conversation_id AS parent_id, CAST(NULL AS TEXT) AS comment_id, \
+             f.blob_id AS blob_id, f.file_name AS name, f.mime_type AS media_type, \
+             b.sha256 AS sha256, b.storage_key AS storage_key, b.deleted_at AS deleted_at \
+             FROM chat_message_files f JOIN attachment_blobs b ON b.id = f.blob_id \
+             AND b.workspace_id = f.workspace_id WHERE f.id = $1 AND f.message_id IS NOT NULL"
+        }
     };
     let Some(row) = sqlx::query(sql)
         .bind(id.to_string())
@@ -126,6 +140,9 @@ pub async fn find(
                 .transpose()?,
         },
         OfficeFileKind::PageFile => OfficeFileParent::Page { page_id: parent_id },
+        OfficeFileKind::ChatFile => OfficeFileParent::Chat {
+            conversation_id: parent_id,
+        },
     };
     let mut file = OfficeFile {
         kind,
@@ -219,6 +236,8 @@ pub async fn renew_key(
 ///   replace or delete it).
 /// - A file of a comment: the people who may edit the comment change it; the others read it.
 /// - A file of a Docs page: every member who sees the page may read and change it.
+/// - A file of a chat message: everyone who can read the conversation reads it. Nobody changes
+///   it.
 pub async fn access(
     database: &Database,
     uploads: &UploadService,
@@ -260,6 +279,11 @@ pub async fn access(
                 Err(PageFileError::NotFound) => Ok(None),
                 Err(error) => Err(OfficeFileError::Access(error.to_string())),
             }
+        }
+        OfficeFileParent::Chat { .. } => {
+            let readable =
+                can_open_chat_file(database, file.workspace_id, session.user.id, file.id).await?;
+            Ok(readable.then_some(OfficeAccess::View))
         }
     }
 }

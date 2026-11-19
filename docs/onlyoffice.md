@@ -2,11 +2,12 @@
 
 This is a feature of the `evolv3ai/orbit` fork. Orbit opens Word, Excel, PowerPoint and PDF files in the browser with an [ONLYOFFICE Docs](https://www.onlyoffice.com/docs) Document Server that you run. The files stay in Orbit: the Document Server gets a file from Orbit when someone opens it, and sends the edited file back when they are done.
 
-People open a file with **Open in editor** on a file of a task, a comment or a Docs page. The editor opens in a new tab.
+People open a file with **Open in editor** on a file of a task, a comment, a Docs page or a chat message. The editor opens in a new tab.
 
 - `docx`, `xlsx` and `pptx` open for editing, for people who can edit the task or page. Other people get a read-only view.
 - `pdf`, `doc`, `docm`, `dotx`, `odt`, `rtf`, `xls`, `xlsm`, `ods`, `ppt`, `ppsx` and `odp` open read-only.
-- Chat files, mail attachments and the mobile app have no **Open in editor**.
+- A file of a chat message always opens read-only, for everyone who can read the conversation: a message stays as it was sent. To change such a file, download it and add it to a task or a Docs page.
+- Mail attachments and the mobile app have no **Open in editor**.
 
 Several people can edit one file at the same time. Orbit stores the file when the last person closes the editor. Orbit keeps the bytes it replaces: the last 20 versions of each file. There is no screen to list or restore versions yet.
 
@@ -96,7 +97,7 @@ While office editing is on, Orbit's content security policy lets pages load scri
 
 ## Common problems
 
-**There is no "Open in editor".** Office editing is off, the file is not one of the formats above, or the file is a chat file or a mail attachment. The web app asks for the switch once per five minutes, so a change can take that long to show without a reload.
+**There is no "Open in editor".** Office editing is off, the file is not one of the formats above, or the file is a mail attachment. The web app asks for the switch once per five minutes, so a change can take that long to show without a reload.
 
 **"The Document Server could not be reached."** The browser could not load the editor from the Document Server URL. Open `{Document Server URL}/web-apps/apps/api/documents/api.js` in the same browser. Check the URL, the proxy and the certificate, and that an HTTPS Orbit has an HTTPS Document Server.
 

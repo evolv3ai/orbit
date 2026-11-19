@@ -13,13 +13,16 @@ use thiserror::Error;
 /// (Open question 3 of the spec: this number, or a workspace setting.)
 pub const MAX_VERSIONS_PER_FILE: i64 = 20;
 
-/// The kinds of file the editor can save. A chat file is view only: it has no versions.
+/// The kinds of file the editor opens.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OfficeFileKind {
     /// An `attachment_references` row: a file of a task or of a task comment.
     Attachment,
     /// A `page_files` row: a file of a Docs page.
     PageFile,
+    /// A `chat_message_files` row: a file of a chat message. View only: a message is a record
+    /// of what was sent, so the editor never saves it and it has no versions.
+    ChatFile,
 }
 
 impl OfficeFileKind {
@@ -29,14 +32,22 @@ impl OfficeFileKind {
         match self {
             Self::Attachment => "attachment",
             Self::PageFile => "page_file",
+            Self::ChatFile => "chat_file",
         }
     }
 
-    /// The table of the file and its size column.
-    const fn table(self) -> (&'static str, &'static str) {
+    /// The editor can save a file of this kind.
+    #[must_use]
+    pub const fn saves(self) -> bool {
+        self.table().is_some()
+    }
+
+    /// The table of the file and its size column, for the kinds the editor saves.
+    const fn table(self) -> Option<(&'static str, &'static str)> {
         match self {
-            Self::Attachment => ("attachment_references", "byte_size"),
-            Self::PageFile => ("page_files", "size_bytes"),
+            Self::Attachment => Some(("attachment_references", "byte_size")),
+            Self::PageFile => Some(("page_files", "size_bytes")),
+            Self::ChatFile => None,
         }
     }
 }
@@ -89,7 +100,7 @@ impl OfficeFileVersions {
             return Err(OfficeVersionError::TooLarge { limit });
         }
         let size = i64::try_from(bytes.len()).map_err(|_| UploadError::SizeOverflow)?;
-        let (table, size_column) = kind.table();
+        let (table, size_column) = kind.table().ok_or(OfficeVersionError::NotFound)?;
 
         let finalization = self.uploads.begin_finalization().await;
         let now = self.database.database_now().await?;
