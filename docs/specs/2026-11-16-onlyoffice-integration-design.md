@@ -174,13 +174,15 @@ As built (OO-22, a key that the Document Server refuses):
 ### 4.4 Download (OO-9)
 
 `GET /api/v1/office/{kind}/{file_id}/download?t=…` streams the blob through the existing
-`BlobDownload` (local disk and S3). It checks the office token and, when present, the JWT in the
+`BlobDownload` (local disk and S3). It checks the office token and the JWT in the
 `Authorization` header. GET needs no change to the origin check.
 
 As built (OO-9, `download_office_file` in `apps/server/src/office/editor.rs`):
 
-- The office token alone allows the download. An `Authorization: Bearer` header, when the
-  Document Server sends one, must be a token the shared secret signed; its payload is not read.
+- The office token and an `Authorization: Bearer` header allow the download together (OO-27).
+  The header must be a token the shared secret signed; its payload is not read. Without it the
+  answer is 404 and a warning in the log, so the address alone opens nothing. The Document
+  Server must therefore run with JWT on. Until OO-27 the header was checked only when sent.
 - 404 `office_file_not_found` for everything else: no or a wrong token, another file or kind, a
   file that holds other bytes than the token names (after a save or a replace), and office
   editing off.

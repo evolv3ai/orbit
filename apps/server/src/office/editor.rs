@@ -288,10 +288,11 @@ pub(crate) struct OfficeDownloadQuery {
     t: Option<String>,
 }
 
-/// The bytes of a file, for the Document Server: it has no session, so the office token of the
-/// address is what allows the download. The token names one version of the file; once the file
-/// holds other bytes, or office editing is off, the answer is 404. Not in the OpenAPI document:
-/// no client of Orbit calls it.
+/// The bytes of a file, for the Document Server. It has no session: the office token of the
+/// address names what it may download, and the `Authorization: Bearer` header that it signs with
+/// the shared secret shows that it is the Document Server who asks. The address alone is not
+/// enough. The token names one version of the file; once the file holds other bytes, or office
+/// editing is off, the answer is 404. Not in the OpenAPI document: no client of Orbit calls it.
 pub(crate) async fn download_office_file(
     State(state): State<OfficeState>,
     Path((kind, file_id)): Path<(String, String)>,
@@ -324,31 +325,31 @@ pub(crate) async fn download_office_file(
         .map_err(|error| internal(&instance, request_id).cause(error))?
         .filter(|settings| settings.enabled)
         .ok_or_else(|| not_found(&instance, request_id))?;
-    // The Document Server signs its requests when it is set up to. A signature that is there
-    // must be its own.
-    let signed = headers.contains_key(AUTHORIZATION);
-    if let Some(authorization) = headers.get(AUTHORIZATION) {
-        let secret = settings.jwt_secret(app_key).ok_or_else(|| {
-            internal(&instance, request_id).cause("the office secret cannot be decrypted")
-        })?;
-        authorization
-            .to_str()
-            .ok()
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .and_then(|token| jwt::verify(token.trim(), &secret, now))
-            .ok_or_else(|| not_found(&instance, request_id))?;
+    // A Document Server with JWT on signs its requests. Without its signature there is no
+    // download: an address that leaked (a log, a proxy) opens nothing.
+    let secret = settings.jwt_secret(app_key).ok_or_else(|| {
+        internal(&instance, request_id).cause("the office secret cannot be decrypted")
+    })?;
+    if headers
+        .get(AUTHORIZATION)
+        .and_then(|authorization| authorization.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|token| jwt::verify(token.trim(), &secret, now))
+        .is_none()
+    {
+        tracing::warn!(
+            kind = kind.as_str(),
+            %file_id,
+            signed = headers.contains_key(AUTHORIZATION),
+            "an office download without the signature of the Document Server was refused"
+        );
+        return Err(not_found(&instance, request_id));
     }
     let file = files::find(database, kind, file_id)
         .await
         .map_err(|error| internal(&instance, request_id).cause(error))?
         .filter(|file| file.blob_id == blob_id && !file.deleted)
         .ok_or_else(|| not_found(&instance, request_id))?;
-    tracing::info!(
-        kind = file.kind.as_str(),
-        file_id = %file.id,
-        signed,
-        "the office Document Server downloads a file"
-    );
     let download = state
         .uploads
         .download(|| async {

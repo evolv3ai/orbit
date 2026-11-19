@@ -101,6 +101,8 @@ While office editing is on, Orbit's content security policy lets pages load scri
 
 **"The Document Server could not be reached."** The browser could not load the editor from the Document Server URL. Open `{Document Server URL}/web-apps/apps/api/documents/api.js` in the same browser. Check the URL, the proxy and the certificate, and that an HTTPS Orbit has an HTTPS Document Server.
 
+**The editor shows "Download failed."** The Document Server could not get the file from Orbit. Either it cannot reach Orbit (see the network paths above), or it does not sign its requests: Orbit hands a file only to a request that carries the Document Server's signature, so the Document Server must run with `JWT_ENABLED=true` and the same secret. The Orbit log then says `an office download without the signature of the Document Server was refused`.
+
 **The editor shows "The document security token is not correctly formed."** The JWT secret in Orbit is not the `JWT_SECRET` of the Document Server. The Document Server log says `checkJwt error … invalid signature`. Save the right secret in Orbit, or restart the Document Server with it. The connection test does not find this: `/healthcheck` needs no secret.
 
 **The editor opens and then shows a download error.** The Document Server cannot reach Orbit. Run this in the Document Server container, with the Orbit URL for the Document Server:
