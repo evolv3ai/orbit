@@ -1035,6 +1035,73 @@ async fn a_save_from_the_document_server_becomes_the_file_and_keeps_the_earlier_
     assert_eq!(hits.load(Ordering::SeqCst), 2);
 }
 
+impl Fixture {
+    /// What a tab that has seen the workspace up to `after` is sent next.
+    async fn live_events(&self, after: i64) -> (String, i64) {
+        let events = orbit_server::realtime::replay(&self.database, self.workspace_id, Some(after))
+            .await
+            .unwrap();
+        assert!(!events.workspaces_changed && !events.profile_changed && !events.views_only);
+        (events.kind.to_owned(), events.sequence.parse().unwrap())
+    }
+}
+
+/// OO-25. An open task or page learns of a save through the events of its workspace: the
+/// successful `office.file_saved` audit event is one. The web app then asks again for what it
+/// shows of the workspace, the files of the open task among it.
+#[tokio::test]
+async fn a_save_tells_the_open_tabs_of_the_workspace_and_a_failed_save_does_not() {
+    let fixture = Fixture::without_document_server().await;
+    let (server, _hits) = document_server(b"edited bytes").await;
+    fixture.save_settings_with(true, Some(&server)).await;
+    let files = [
+        (
+            "attachment",
+            fixture.attachment("report.docx", b"first bytes").await,
+        ),
+        (
+            "page_file",
+            fixture.page_file("notes.docx", b"first bytes").await,
+        ),
+    ];
+    for (kind, id) in files {
+        let (_, config) = fixture
+            .config(&fixture.owner_cookie, kind, &id.to_string(), "")
+            .await;
+        let key = config["config"]["document"]["key"].as_str().unwrap();
+        let users = json!([fixture.owner_id.to_string()]);
+        let (_, seen) = fixture.live_events(0).await;
+
+        // Editing, closing without changes and a failed save change nothing in the workspace.
+        for status in [1, 4, 3, 7] {
+            let body = json!({"key": key, "status": status, "users": users});
+            let (status, _) = callback(&fixture.app, kind, id, &body, Token::Body(SECRET)).await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        assert_eq!(fixture.live_events(seen).await.1, seen, "{kind}");
+
+        let saved = json!({
+            "key": key,
+            "status": 2,
+            "url": format!("{server}/cache/out.docx"),
+            "filetype": "docx",
+            "users": users,
+        });
+        let (status, answer) = callback(&fixture.app, kind, id, &saved, Token::Body(SECRET)).await;
+        assert_eq!((status, answer), (StatusCode::OK, json!({"error": 0})));
+        assert_eq!(
+            fixture.live_events(seen).await,
+            ("workspace.changed".to_owned(), seen + 1),
+            "{kind}"
+        );
+
+        // The same save again stores nothing and tells nobody.
+        let (status, _) = callback(&fixture.app, kind, id, &saved, Token::Body(SECRET)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(fixture.live_events(seen + 1).await.1, seen + 1, "{kind}");
+    }
+}
+
 #[tokio::test]
 async fn a_save_with_an_old_key_is_stored_and_an_unknown_editor_is_left_out() {
     let fixture = Fixture::without_document_server().await;

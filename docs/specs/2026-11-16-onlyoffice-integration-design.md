@@ -231,8 +231,15 @@ As built (OO-10, `apps/server/src/office/callback.rs`):
   already in it, and the later save of the old session replaces the newer bytes (they are kept
   as a version). Orbit does not turn force save on, so this happens only when it is turned on in
   the Document Server. A fix needs a stored key per editing session.
-- The web app is not told that a file changed: an open task or page shows the new size after a
-  reload.
+- Open tabs learn of a save (checked for OO-25; an earlier note here said they do not). The
+  successful `office.file_saved` audit event is an event of the workspace, as every successful
+  audit event is. The web app then asks again for what it shows of the workspace, so an open task
+  shows the new size of the file without a reload. A failed save and a repeated callback send no
+  event. The test is `a_save_tells_the_open_tabs_of_the_workspace_and_a_failed_save_does_not`.
+  Run on 2026-11-18 against Document Server 10.0.0: an open task went from 930 B to 24.7 KB
+  after the editor tab closed. (Coming back to the tab also makes the web app ask again, so this
+  run alone does not show which of the two did it.) A file block of a page shows no size, so
+  there is nothing to refresh on a page.
 
 As built (OO-23, telling the person when a save fails):
 
