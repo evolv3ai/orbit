@@ -1,11 +1,12 @@
 import { chatEnabled } from '@/lib/chatEnabled'
 
-/** Where a command can run. A page mounts the handlers of its contexts; `task-target` needs a target task. */
-export type Context = 'global' | 'task-list' | 'task-board' | 'timeline' | 'task-detail' | 'task-target' | 'new-task' | 'docs' | 'views' | 'chat' | 'mail'
+/** Where a command can run. A page mounts the handlers of its contexts; `task-target` needs a target task.
+ *  `composer`: the focus is in a mail composer (the inline reply or a floating window, on any page). */
+export type Context = 'global' | 'task-list' | 'task-board' | 'timeline' | 'task-detail' | 'task-target' | 'new-task' | 'docs' | 'views' | 'chat' | 'mail' | 'composer' | 'pull'
 /** Mail's commands, hidden while Mail is off for the server. */
 export const isMailCommand = (id: string) => id === 'nav.mail' || id.startsWith('mail.')
 
-export type Group = 'General' | 'Navigation' | 'List' | 'Task' | 'Docs' | 'Chat' | 'Mail'
+export type Group = 'General' | 'Navigation' | 'List' | 'Task' | 'Pull requests' | 'Docs' | 'Chat' | 'Mail'
 
 export interface Command {
   id: string
@@ -85,6 +86,16 @@ const REGISTRY = [
   { id: 'newTask.submit', title: 'Create the task', group: 'Task', keys: 'Mod+Enter', context: 'new-task', fixed: true },
   { id: 'newTask.submitMore', title: 'Create and add another', group: 'Task', keys: 'Mod+Shift+Enter', context: 'new-task', inInputs: true },
 
+  { id: 'pull.nextFile', title: 'Go to next file', group: 'Pull requests', keys: 'J', context: 'pull', repeat: true },
+  { id: 'pull.prevFile', title: 'Go to previous file', group: 'Pull requests', keys: 'K', context: 'pull', repeat: true },
+  { id: 'pull.nextThread', title: 'Go to next comment thread', group: 'Pull requests', keys: 'N', context: 'pull' },
+  { id: 'pull.prevThread', title: 'Go to previous comment thread', group: 'Pull requests', keys: 'P', context: 'pull' },
+  { id: 'pull.toggleViewed', title: 'Mark file as viewed and go to the next one', group: 'Pull requests', keys: 'V', context: 'pull' },
+  { id: 'pull.comment', title: 'Comment on the line under the pointer', group: 'Pull requests', keys: 'M', context: 'pull' },
+  { id: 'pull.review', title: 'Open your review', group: 'Pull requests', keys: 'R', context: 'pull' },
+  { id: 'pull.activity', title: 'Show or hide the activity', group: 'Pull requests', keys: 'A', context: 'pull' },
+  { id: 'pull.filter', title: 'Filter the changed files', group: 'Pull requests', keys: 'F', context: 'pull' },
+
   { id: 'docs.createPage', title: 'Create page', group: 'Docs', keys: null, context: 'docs' },
   { id: 'docs.history', title: 'Show page history', group: 'Docs', keys: 'Mod+Shift+H', context: 'docs', inInputs: true },
   { id: 'docs.comment', title: 'Add comment', group: 'Docs', keys: 'Mod+Alt+M', context: 'docs', inInputs: true },
@@ -113,6 +124,19 @@ const REGISTRY = [
   { id: 'mail.search', title: 'Search mail', group: 'Mail', keys: '/', context: 'mail', shadows: 'search.open' },
   { id: 'mail.starred', title: 'Go to starred', group: 'Mail', keys: 'G S', context: 'mail', shadows: 'nav.settings' },
   { id: 'mail.trashFolder', title: 'Go to trash', group: 'Mail', keys: 'G T', context: 'mail', shadows: 'nav.tasks' },
+  { id: 'mail.compose', title: 'New email (mail page)', group: 'Mail', keys: 'C', context: 'mail', shadows: 'task.create' },
+  { id: 'mail.reply', title: 'Reply', group: 'Mail', keys: 'R', context: 'mail' },
+  { id: 'mail.replyAll', title: 'Reply all', group: 'Mail', keys: 'A', context: 'mail' },
+  { id: 'mail.forward', title: 'Forward', group: 'Mail', keys: 'F', context: 'mail' },
+  // ⌘K "New email" on the other pages (C is "Create task" there); the floating composer stays open across pages
+  { id: 'mail.composeAnywhere', title: 'New email', group: 'Mail', keys: null, context: 'global' },
+  // only while the "Message sent" toast shows; Z in a text field stays a letter
+  { id: 'mail.undoSend', title: 'Undo send', group: 'Mail', keys: 'Z', context: 'global' },
+  // the composer's own keys (they work while typing, so they are fixed): listed in the help, handled by the composer
+  { id: 'mail.send', title: 'Send', group: 'Mail', keys: 'Mod+Enter', context: 'composer', fixed: true },
+  { id: 'mail.sendArchive', title: 'Send, archive and open the next conversation', group: 'Mail', keys: 'Mod+Shift+Enter', context: 'composer', fixed: true },
+  { id: 'mail.popOut', title: 'Pop out or expand the composer', group: 'Mail', keys: 'Mod+Shift+E', context: 'composer', fixed: true },
+  { id: 'mail.minimize', title: 'Minimize the composer (the draft is kept)', group: 'Mail', keys: 'Escape', context: 'composer', fixed: true },
 ] as const satisfies readonly Command[]
 
 export type CommandId = (typeof REGISTRY)[number]['id']

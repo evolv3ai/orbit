@@ -475,10 +475,20 @@ As built (OO-6):
   migration that rebuilds `notifications`, add the kind, the column `office_file_name` and their
   checks to it before it runs anywhere, or it fails on an Orbit that has such a notification.
   The test `a_failed_save_marks_the_file_and_tells_the_person_who_edited_last` fails when the
-  kind is lost. Done once, for the merge of upstream v0.4.0: the fork changed the upstream migration
-  `20261118130637_chat_reports_and_blocks` (both copies; a comment in it says so), so its
-  checksum differs from upstream's. Keep the fork's copy in later merges. Also changed for it: `repositories/tasks.rs` (the notification record) and the
+  kind is lost. Done twice: for the merge of upstream v0.4.0 the fork changed the upstream migration
+  `20261118130637_chat_reports_and_blocks`, and for the merge of upstream `main` at `266476ef`
+  (GitHub pull request notices) it changed `20261119105541_github_pull_review` (both copies of
+  each; a comment in them says so), so their checksums differ from upstream's. Keep the fork's
+  copies in later merges. Also changed for it: `repositories/tasks.rs` (the notification record) and the
   inbox wording of the web and mobile apps.
+- **Write locks (upstream v0.4.1 and later).** Upstream scopes write transactions and wants slow work out
+  of them (`AGENTS.md`, "Write locks"). The office code follows it: a save reads the workspace of
+  the file first, puts the bytes in the store with `prepare_bytes`, and then finalizes in a
+  `workspace_transaction`; the save-failure record and the office audit events also use the
+  workspace scope. The instance settings keep `immediate_transaction` (a shared row).
+- **Chat download rule (OO-26).** `repositories/chat/files.rs` now holds the access rule of a
+  chat file in one function (`openable_file`), used by upstream's `download_file` and by the
+  fork's `can_open_chat_file`. When upstream changes the rule, keep one copy.
 - Work on a `feat/onlyoffice` branch; rebase on `upstream/main` before each release.
 - If the integration proves itself, offer it upstream, which needs the mobile port.
 

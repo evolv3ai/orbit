@@ -16,6 +16,7 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         orbit_platform::Problem,
         orbit_platform::ConflictMetadata,
         crate::task_routes::ProblemBody,
+        crate::github::pulls::PullFilter,
         crate::workspace_routes::ProblemBody,
         crate::attachment_routes::AttachmentProblem,
         crate::repositories::task_filter::FilterGroup,
@@ -203,6 +204,30 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::integration_routes::save_github_project_connection,
         crate::integration_routes::delete_github_project_connection,
         crate::integration_routes::start_github_manifest,
+        crate::github_user_routes::github_connection,
+        crate::github_user_routes::start_github_connection,
+        crate::github_user_routes::delete_github_connection,
+        crate::github_user_routes::github_connection_callback,
+        crate::github_user_routes::finish_github_connection,
+        crate::github_pull_routes::list_github_project_pulls,
+        crate::github_pull_routes::get_github_pull,
+        crate::github_pull_routes::list_github_pull_files,
+        crate::github_pull_routes::get_github_pull_contents,
+        crate::github_pull_routes::list_github_pull_threads,
+        crate::github_pull_routes::list_github_pull_conversation,
+        crate::github_pull_routes::get_github_pull_merge_base,
+        crate::github_pull_routes::create_github_review_comment,
+        crate::github_pull_routes::update_github_review_comment,
+        crate::github_pull_routes::delete_github_review_comment,
+        crate::github_pull_routes::reply_github_review_thread,
+        crate::github_pull_routes::resolve_github_review_thread,
+        crate::github_pull_routes::unresolve_github_review_thread,
+        crate::github_pull_routes::submit_github_review,
+        crate::github_pull_routes::discard_github_review,
+        crate::github_pull_routes::merge_github_pull,
+        crate::github_pull_routes::delete_github_pull_branch,
+        crate::github_pull_routes::mark_github_file_viewed,
+        crate::github_pull_routes::unmark_github_file_viewed,
         crate::task_routes::list_projects,
         crate::task_routes::create_project,
         crate::task_routes::update_project,
@@ -443,8 +468,23 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::mail_routes::domains::get_mail_domain,
         crate::mail_routes::domains::delete_mail_domain,
         crate::mail_routes::domains::check_mail_domain,
+        crate::mail_routes::domains::rotate_mail_domain_dkim,
         crate::mail_routes::domains::set_mail_domain_catch_all,
         crate::mail_routes::domains::set_mail_domain_route,
+        crate::mail_routes::domains::set_mail_domain_send_route,
+        crate::mail_routes::send_routes::list_instance_mail_send_routes,
+        crate::mail_routes::send_routes::create_instance_mail_send_route,
+        crate::mail_routes::send_routes::update_instance_mail_send_route,
+        crate::mail_routes::send_routes::delete_instance_mail_send_route,
+        crate::mail_routes::send_routes::test_instance_mail_send_route,
+        crate::mail_routes::send_routes::set_mail_send_default,
+        crate::mail_routes::send_routes::create_instance_mail_provider_send_route,
+        crate::mail_routes::send_routes::list_workspace_mail_send_routes,
+        crate::mail_routes::send_routes::create_workspace_mail_send_route,
+        crate::mail_routes::send_routes::update_workspace_mail_send_route,
+        crate::mail_routes::send_routes::delete_workspace_mail_send_route,
+        crate::mail_routes::send_routes::test_workspace_mail_send_route,
+        crate::mail_routes::send_routes::create_workspace_mail_provider_send_route,
         crate::mail_routes::providers::list_instance_mail_providers,
         crate::mail_routes::providers::create_instance_mail_provider,
         crate::mail_routes::providers::update_instance_mail_provider,
@@ -467,6 +507,45 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::mail_routes::mailboxes::remove_mailbox_address,
         crate::mail_routes::mailboxes::preview_personal_mailboxes,
         crate::mail_routes::mailboxes::create_personal_mailboxes,
+        crate::mail_routes::compose::list_from_addresses,
+        crate::mail_routes::compose::search_mail_contacts,
+        crate::mail_routes::compose::delete_mail_contact,
+        crate::mail_routes::mailboxes::get_mailbox_vacation,
+        crate::mail_routes::mailboxes::put_mailbox_vacation,
+        crate::mail_routes::compose::get_mail_signature,
+        crate::mail_routes::compose::put_mail_signature,
+        crate::mail_routes::compose::delete_mail_signature,
+        crate::mail_routes::compose::list_mail_snippets,
+        crate::mail_routes::compose::create_mail_snippet,
+        crate::mail_routes::compose::update_mail_snippet,
+        crate::mail_routes::compose::delete_mail_snippet,
+        crate::mail_routes::compose::get_mail_settings,
+        crate::mail_routes::compose::put_mail_settings,
+        crate::mail_routes::drafts::list_mail_drafts,
+        crate::mail_routes::drafts::create_mail_draft,
+        crate::mail_routes::drafts::get_mail_draft,
+        crate::mail_routes::drafts::update_mail_draft,
+        crate::mail_routes::drafts::delete_mail_draft,
+        crate::mail_routes::drafts::upload_mail_draft_file,
+        crate::mail_routes::drafts::get_mail_draft_file,
+        crate::mail_routes::drafts::check_mail_draft,
+        crate::mail_routes::drafts::update_mail_draft_file,
+        crate::mail_routes::drafts::delete_mail_draft_file,
+        crate::mail_routes::send::send_mail_draft,
+        crate::mail_routes::send::cancel_mail_outbound,
+        crate::mail_routes::content::revoke_mail_file_link,
+        crate::mail_routes::content::download_mail_file,
+        crate::mail_routes::send::list_mail_outbound,
+        crate::mail_routes::admin::list_mail_send_policies,
+        crate::mail_routes::admin::get_mail_send_policy_admin,
+        crate::mail_routes::admin::set_mail_send_policy,
+        crate::mail_routes::admin::get_mail_send_tiers,
+        crate::mail_routes::admin::set_mail_send_tiers,
+        crate::mail_routes::admin::resume_mail_sending,
+        crate::mail_routes::admin::get_mail_send_policy,
+        crate::mail_routes::suppressions::retry_mail_recipient,
+        crate::mail_routes::suppressions::list_mail_suppressions,
+        crate::mail_routes::suppressions::delete_mail_suppression,
         crate::mail_routes::labels::list_mail_labels,
         crate::mail_routes::labels::create_mail_label,
         crate::mail_routes::labels::update_mail_label,
@@ -482,6 +561,7 @@ pub const CONTRACT_ID: &str = "orbit-api-v1";
         crate::mail_routes::content::get_mail_content,
         crate::mail_routes::content::get_mail_part,
         crate::mail_routes::inbound::post_inbound,
+        crate::mail_routes::events::post_mail_events,
         crate::mail_routes::content::get_mail_image,
         crate::mail_routes::content::download_mail_attachment,
         crate::mail_routes::content::download_mail_message,
@@ -688,10 +768,12 @@ fn public_operation(operation_id: &str) -> bool {
             | "post_action_response"
             | "read_hook_messages"
             | "github_manifest_callback"
+            | "github_connection_callback"
             | "get_mail_content"
             | "get_mail_part"
             | "get_mail_image"
             | "post_inbound"
+            | "post_mail_events"
             | "stripe_webhook"
             | "provider_callback"
             | "link_provider_sign_in"
@@ -1104,6 +1186,75 @@ fn problem_responses(operation_id: &str) -> BTreeMap<&'static str, String> {
             add_code(&mut responses, "422", "invalid_github_connection");
             add_code(&mut responses, "409", "github_label_conflict");
         }
+        "github_connection" | "delete_github_connection" => {
+            add_code(&mut responses, "404", "github_workspace_not_found");
+        }
+        "list_github_project_pulls"
+        | "get_github_pull"
+        | "list_github_pull_files"
+        | "get_github_pull_contents"
+        | "list_github_pull_threads"
+        | "list_github_pull_conversation"
+        | "get_github_pull_merge_base"
+        | "create_github_review_comment"
+        | "update_github_review_comment"
+        | "delete_github_review_comment"
+        | "reply_github_review_thread"
+        | "resolve_github_review_thread"
+        | "unresolve_github_review_thread"
+        | "submit_github_review"
+        | "discard_github_review"
+        | "merge_github_pull"
+        | "delete_github_pull_branch"
+        | "mark_github_file_viewed"
+        | "unmark_github_file_viewed" => {
+            add_code(&mut responses, "403", "github_forbidden");
+            add_code(&mut responses, "404", "github_workspace_not_found");
+            add_code(&mut responses, "404", "github_project_not_found");
+            add_code(&mut responses, "404", "pull_not_found");
+            add_code(&mut responses, "409", "github_not_connected");
+            add_code(&mut responses, "409", "github_reconnect");
+            add_code(&mut responses, "409", "github_app_missing");
+            add_code(&mut responses, "409", "github_app_recreate");
+            add_code(&mut responses, "422", "github_refused");
+            add_code(&mut responses, "429", "github_rate_limited");
+            add_code(&mut responses, "502", "github_unavailable");
+            match operation_id {
+                "create_github_review_comment" | "reply_github_review_thread" | "update_github_review_comment" => {
+                    add_code(&mut responses, "422", "invalid_review_comment");
+                    if operation_id == "create_github_review_comment" {
+                        add_code(&mut responses, "409", "pull_head_changed");
+                    }
+                }
+                "submit_github_review" => {
+                    add_code(&mut responses, "422", "invalid_review");
+                    add_code(&mut responses, "422", "cannot_review_own_pull");
+                    add_code(&mut responses, "422", "review_empty");
+                }
+                "discard_github_review" => add_code(&mut responses, "404", "no_pending_review"),
+                "merge_github_pull" => {
+                    add_code(&mut responses, "409", "pull_head_changed");
+                    add_code(&mut responses, "422", "invalid_merge");
+                    add_code(&mut responses, "422", "merge_blocked");
+                }
+                "delete_github_pull_branch" => add_code(&mut responses, "422", "branch_not_deletable"),
+                _ => {}
+            }
+        }
+        "finish_github_connection" => {
+            add_code(&mut responses, "403", "github_connect_mismatch");
+            add_code(&mut responses, "404", "github_workspace_not_found");
+            add_code(&mut responses, "409", "github_account_taken");
+            add_code(&mut responses, "422", "github_connect_failed");
+            add_code(&mut responses, "503", "app_key_missing");
+        }
+        "start_github_connection" => {
+            add_code(&mut responses, "404", "github_workspace_not_found");
+            add_code(&mut responses, "409", "github_app_missing");
+            add_code(&mut responses, "409", "github_app_recreate");
+            add_code(&mut responses, "422", "invalid_redirect");
+            add_code(&mut responses, "503", "app_key_missing");
+        }
         "start_github_manifest" => {
             add_code(&mut responses, "403", "github_manager_required");
             add_code(&mut responses, "404", "github_workspace_not_found");
@@ -1377,11 +1528,16 @@ fn problem_responses(operation_id: &str) -> BTreeMap<&'static str, String> {
         id if database_operation(id) => database_errors(id, &mut responses),
         id if teamspace_operation(id) => teamspace_errors(id, &mut responses),
         id if id.contains("chat") => chat_errors(id, &mut responses),
+        id if id.contains("send_route") || id == "set_mail_send_default" => {
+            mail_send_route_errors(id, &mut responses);
+        }
         id if id.contains("mail_domain") => mail_domain_errors(id, &mut responses),
         id if id.contains("mail_provider") => mail_provider_errors(id, &mut responses),
         id if id.contains("mailbox") || id.contains("mail_label") => {
             mailbox_errors(id, &mut responses);
         }
+        id if mail_compose_operation(id) => mail_compose_errors(id, &mut responses),
+        id if mail_draft_operation(id) => mail_draft_errors(id, &mut responses),
         id if mail_thread_operation(id) => mail_thread_errors(id, &mut responses),
         id if mail_content_operation(id) => mail_content_errors(id, &mut responses),
         _ => {}
@@ -2368,6 +2524,42 @@ fn mail_domain_errors(
     }
 }
 
+/// Send route routes: the root user's instance routes, or a workspace's (`mail.manage`).
+fn mail_send_route_errors(
+    operation_id: &str,
+    responses: &mut BTreeMap<&'static str, Vec<&'static str>>,
+) {
+    if operation_id.contains("instance") || operation_id == "set_mail_send_default" {
+        add_code(responses, "403", "installation_admin_required");
+    } else {
+        add_code(responses, "403", "mail_forbidden");
+        add_code(responses, "404", "mail_not_found");
+    }
+    if operation_id.starts_with("create_")
+        || operation_id.starts_with("update_")
+        || operation_id.starts_with("set_")
+        || operation_id.starts_with("test_")
+    {
+        add_code(responses, "400", "invalid_request");
+        add_code(responses, "422", "validation_failed");
+    }
+    if operation_id.starts_with("create_") || operation_id.starts_with("update_") {
+        add_code(responses, "422", "hostname_required");
+        add_code(responses, "422", "private_host_refused");
+        add_code(responses, "422", "plain_smtp_refused");
+    }
+    if operation_id.starts_with("create_workspace_") {
+        add_code(responses, "403", "workspace_providers_disabled");
+    }
+    if operation_id.starts_with("delete_") {
+        add_code(responses, "409", "route_in_use");
+        add_code(responses, "409", "route_is_default");
+    }
+    if operation_id.contains("instance") {
+        add_code(responses, "404", "mail_not_found");
+    }
+}
+
 /// Mail provider routes: the root user's instance providers, or a workspace's (`mail.manage`).
 fn mail_provider_errors(
     operation_id: &str,
@@ -2434,12 +2626,84 @@ fn workspace_mail_operation(operation_id: &str) -> bool {
     );
     let mail_route = operation_id.contains("mail_domain")
         || operation_id.contains("mail_provider")
+        || operation_id.contains("send_route")
         || operation_id.contains("mailbox")
         || operation_id.contains("mail_label")
         || operation_id.contains("mail_receipt")
         || mail_thread_operation(operation_id)
+        || mail_compose_operation(operation_id)
+        || mail_draft_operation(operation_id)
         || mail_content_operation(operation_id);
     mail_route && !instance_route && !token_route
+}
+
+fn mail_compose_operation(operation_id: &str) -> bool {
+    matches!(
+        operation_id,
+        "list_from_addresses"
+            | "get_mail_signature"
+            | "put_mail_signature"
+            | "delete_mail_signature"
+            | "list_mail_snippets"
+            | "create_mail_snippet"
+            | "update_mail_snippet"
+            | "delete_mail_snippet"
+            | "get_mail_settings"
+            | "put_mail_settings"
+    )
+}
+
+/// Compose routes are the caller's own: another member's id is `mail_not_found`.
+fn mail_compose_errors(
+    operation_id: &str,
+    responses: &mut BTreeMap<&'static str, Vec<&'static str>>,
+) {
+    add_code(responses, "404", "mail_not_found");
+    if matches!(
+        operation_id,
+        "list_from_addresses"
+            | "put_mail_signature"
+            | "create_mail_snippet"
+            | "update_mail_snippet"
+            | "put_mail_settings"
+    ) {
+        add_code(responses, "400", "invalid_request");
+        add_code(responses, "422", "validation_failed");
+    }
+}
+
+fn mail_draft_operation(operation_id: &str) -> bool {
+    operation_id.ends_with("_mail_draft")
+        || operation_id.ends_with("_mail_drafts")
+        || operation_id.ends_with("_mail_draft_file")
+}
+
+/// Drafts are the caller's own: another member's id is `mail_not_found`.
+fn mail_draft_errors(
+    operation_id: &str,
+    responses: &mut BTreeMap<&'static str, Vec<&'static str>>,
+) {
+    add_code(responses, "404", "mail_not_found");
+    if matches!(
+        operation_id,
+        "list_mail_drafts" | "create_mail_draft" | "update_mail_draft" | "update_mail_draft_file"
+    ) {
+        add_code(responses, "400", "invalid_request");
+        add_code(responses, "422", "validation_failed");
+    }
+    match operation_id {
+        "create_mail_draft" => add_code(responses, "409", "draft_conflict"),
+        "update_mail_draft" => add_code(responses, "409", "draft_conflict"),
+        "upload_mail_draft_file" => {
+            add_code(responses, "400", "invalid_multipart");
+            add_code(responses, "413", "upload_too_large");
+            add_code(responses, "413", "storage_quota_exceeded");
+            add_code(responses, "422", "validation_failed");
+            add_code(responses, "422", "draft_files_limit");
+            add_code(responses, "422", "inline_not_image");
+        }
+        _ => {}
+    }
 }
 
 fn mail_thread_operation(operation_id: &str) -> bool {

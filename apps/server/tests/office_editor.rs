@@ -197,9 +197,10 @@ impl Fixture {
             .await
             .unwrap();
         let finalization = self.uploads.begin_finalization().await;
+        let prepared = finalization.prepare(&staged).await.unwrap();
         let mut tx = self.database.immediate_transaction().await.unwrap();
         let blob = finalization
-            .finalize_blob_in_transaction(&mut tx, &staged, TimestampMillis::from_millis(now))
+            .finalize_blob_in_transaction(&mut tx, &prepared, TimestampMillis::from_millis(now))
             .await
             .unwrap();
         let file_id = Id::new_v7();

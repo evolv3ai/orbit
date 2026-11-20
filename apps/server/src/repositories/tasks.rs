@@ -281,9 +281,10 @@ pub struct NotificationRecord {
     pub actor_user_id: Id,
     /// `task_assigned`, `comment_mentioned` (task comment), `description_mentioned` (task
     /// description), `page_comment_mentioned`, `page_mentioned` (an @mention in a page body) or
-    /// `chat_mentioned` (a chat message), `import_finished` (a long import ended),
-    /// `chat_reported` (a member reported a chat message) or `office_save_failed` (a save from
-    /// the office editor failed; a feature of the `evolv3ai/orbit` fork).
+    /// `chat_mentioned` (a chat message), `import_finished` (a long import ended), `chat_reported` (a member
+    /// reported a chat message), a GitHub pull request notice (`github_review_requested`, `github_review`,
+    /// `github_merged`) or `office_save_failed` (a save from the office editor failed; a feature of the
+    /// `evolv3ai/orbit` fork).
     pub kind: String,
     /// Set for task notifications, and for an `office_save_failed` one of a task's file.
     #[schema(value_type = Option<String>)]
@@ -317,6 +318,14 @@ pub struct NotificationRecord {
     /// The name of the file of an `office_save_failed` notification. The file is on the task
     /// (`task_id`) or the page (`page_id`).
     pub office_file_name: Option<String>,
+    /// GitHub notices (`github_review_requested`, `github_review`, `github_merged`): the repository (`owner/repo`)
+    /// and the pull request number.
+    pub github_repository: Option<String>,
+    pub github_pull_number: Option<i64>,
+    /// Who acted on GitHub (their GitHub login; they may have no Orbit account).
+    pub github_actor_login: Option<String>,
+    /// A `github_review`'s result: `approved`, `changes_requested` or `commented`.
+    pub github_review_state: Option<String>,
     /// The report of a `chat_reported` notification (a member reported a chat message).
     #[schema(value_type = Option<String>)]
     pub chat_report_id: Option<Id>,
@@ -2171,7 +2180,7 @@ impl TaskRepository {
             });
         }
         validate_estimate(input.estimate)?;
-        let mut tx = self.database.immediate_transaction().await?;
+        let mut tx = self.database.workspace_transaction(workspace_id).await?;
         let scope = ProjectScope::of(&require_access_tx(&mut tx, workspace_id, actor_id).await?);
         if self
             .project_grant
@@ -2731,7 +2740,7 @@ impl TaskRepository {
             ),
             false => None,
         };
-        let mut tx = self.database.immediate_transaction().await?;
+        let mut tx = self.database.workspace_transaction(workspace_id).await?;
         let scope = ProjectScope::of(&require_access_tx(&mut tx, workspace_id, actor_id).await?);
         self.check_project_grant(&mut tx, workspace_id, update.id)
             .await?;
@@ -2937,7 +2946,7 @@ impl TaskRepository {
                     .await?,
             );
         }
-        let mut tx = self.database.immediate_transaction().await?;
+        let mut tx = self.database.workspace_transaction(workspace_id).await?;
         let scope = ProjectScope::of(&require_access_tx(&mut tx, workspace_id, actor_id).await?);
         // Each item's before/after pair brackets its own write only; the automation runs after
         // every write, so its result never depends on the order of the items.
@@ -3658,7 +3667,7 @@ impl TaskRepository {
         now: TimestampMillis,
     ) -> Result<CommentRecord, TaskError> {
         let id = Id::new_v7();
-        let mut tx = self.database.immediate_transaction().await?;
+        let mut tx = self.database.workspace_transaction(workspace_id).await?;
         let actor = require_task_tx(&mut tx, workspace_id, task_id, actor_id).await?;
         if let Some(grant) = &self.project_grant {
             let project: String = sqlx::query_scalar(
@@ -3878,7 +3887,7 @@ impl TaskRepository {
         let after = cursor_i64_pair(cursor, &fingerprint)?;
         let mut query = SqlBuilder::new(
             "SELECT id, workspace_id, recipient_user_id, actor_user_id, kind, task_id, comment_id, page_id, \
-             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, chat_report_id, read_at, created_at FROM notifications WHERE workspace_id = ",
+             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, github_repository, github_pull_number, github_actor_login, github_review_state, chat_report_id, read_at, created_at FROM notifications WHERE workspace_id = ",
         );
         query
             .push_bind(workspace_id.to_string())
@@ -3958,7 +3967,7 @@ impl TaskRepository {
         .await?;
         let row = sqlx::query(
             "SELECT id, workspace_id, recipient_user_id, actor_user_id, kind, task_id, comment_id, page_id, \
-             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, chat_report_id, read_at, created_at FROM notifications WHERE id = $1 AND workspace_id = $2 AND recipient_user_id = $3",
+             page_thread_id, page_comment_id, page_block_id, chat_conversation_id, chat_message_id, import_source, import_id, import_status, office_file_name, github_repository, github_pull_number, github_actor_login, github_review_state, chat_report_id, read_at, created_at FROM notifications WHERE id = $1 AND workspace_id = $2 AND recipient_user_id = $3",
         )
         .bind(notification_id.to_string())
         .bind(workspace_id.to_string())
@@ -5992,6 +6001,10 @@ fn notification_from_row(row: sqlx::any::AnyRow) -> Result<NotificationRecord, T
         import_id: optional_id(row.get("import_id"))?,
         import_status: row.get("import_status"),
         office_file_name: row.get("office_file_name"),
+        github_repository: row.get("github_repository"),
+        github_pull_number: row.get("github_pull_number"),
+        github_actor_login: row.get("github_actor_login"),
+        github_review_state: row.get("github_review_state"),
         chat_report_id: optional_id(row.get("chat_report_id"))?,
         read_at: row
             .get::<Option<i64>, _>("read_at")

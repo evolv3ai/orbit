@@ -6,7 +6,7 @@
 //! A version row holds its blob like any other reference (`orbit_platform::BLOB_REFERENCE_COUNT`),
 //! so reconciliation keeps the bytes. Database triggers remove the rows with their file.
 
-use orbit_platform::{Database, Id, Row, UploadError, UploadService};
+use orbit_platform::{Database, Id, UploadError, UploadService};
 use thiserror::Error;
 
 /// How many earlier versions of one file are kept; a save drops the oldest ones over this.
@@ -103,26 +103,38 @@ impl OfficeFileVersions {
         let (table, size_column) = kind.table().ok_or(OfficeVersionError::NotFound)?;
 
         let finalization = self.uploads.begin_finalization().await;
-        let now = self.database.database_now().await?;
-        let mut tx = self.database.immediate_transaction().await?;
-        let file = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "SELECT workspace_id, blob_id FROM {table} WHERE id = $1"
+        // The workspace of a file never changes. It is read first: the bytes go to the store
+        // before the write transaction (the store can be slow), and the transaction locks only
+        // this workspace.
+        let workspace_id: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT workspace_id FROM {table} WHERE id = $1"
         )))
         .bind(file_id.to_string())
-        .fetch_optional(&mut *tx)
+        .fetch_optional(self.database.pool())
         .await?
         .ok_or(OfficeVersionError::NotFound)?;
-        let workspace_id: String = file.try_get("workspace_id")?;
-        let previous_blob: String = file.try_get("blob_id")?;
         let workspace_id: Id = workspace_id
             .parse()
             .map_err(|_| UploadError::InvalidState)?;
+        // When the save does not go through, reconciliation removes the blob after the quarantine.
+        let prepared = finalization.prepare_bytes(workspace_id, bytes).await?;
+        let now = self.database.database_now().await?;
+        let mut tx = self.database.workspace_transaction(workspace_id).await?;
+        // The file may be gone, or hold other bytes, since the read above.
+        let previous_blob: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT blob_id FROM {table} WHERE id = $1 AND workspace_id = $2"
+        )))
+        .bind(file_id.to_string())
+        .bind(workspace_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(OfficeVersionError::NotFound)?;
         let previous_blob_id: Id = previous_blob
             .parse()
             .map_err(|_| UploadError::InvalidState)?;
 
         let blob = finalization
-            .finalize_bytes_in_transaction(&mut tx, workspace_id, bytes, now)
+            .finalize_bytes_in_transaction(&mut tx, &prepared)
             .await?;
         // The file holds what the editor saved: an earlier failed save no longer counts.
         sqlx::query("DELETE FROM office_save_failures WHERE file_kind = $1 AND file_id = $2")

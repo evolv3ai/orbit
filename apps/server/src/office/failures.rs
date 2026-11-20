@@ -28,7 +28,9 @@ pub async fn record(
     editor: Option<Id>,
     now: TimestampMillis,
 ) -> Result<(), sqlx::Error> {
-    let mut transaction = database.immediate_transaction().await?;
+    // Rows of the workspace of the file only; the notification is an insert that `ON CONFLICT`
+    // protects.
+    let mut transaction = database.workspace_transaction(file.workspace_id).await?;
     sqlx::query(
         "INSERT INTO office_save_failures (file_kind, file_id, workspace_id, failed_at) \
          VALUES ($1, $2, $3, $4) \

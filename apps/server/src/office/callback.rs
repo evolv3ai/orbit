@@ -426,7 +426,7 @@ async fn record(
     request_id: &str,
     now: TimestampMillis,
 ) -> Result<(), sqlx::Error> {
-    let mut transaction = database.immediate_transaction().await?;
+    let mut transaction = database.workspace_transaction(file.workspace_id).await?;
     audit::record(
         &mut transaction,
         file.workspace_id,
